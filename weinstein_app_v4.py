@@ -211,30 +211,83 @@ AI_UNIVERSE = {
 # AUTH (simple, session-based)
 # ─────────────────────────────────────────────
 
-USERS = {
-    "joey": hashlib.sha256("weinstein2026".encode()).hexdigest(),
-    # Add more users: "username": sha256("password").hexdigest()
-}
+# ── AUTH SYSTEM ──
+# Seed admin account
+_ADMIN_HASH = hashlib.sha256("weinstein2026".encode()).hexdigest()
+
+if "users_db" not in st.session_state:
+    st.session_state.users_db = {
+        "joey": {"pw": _ADMIN_HASH, "role": "admin"},
+    }
+
+if "invite_codes" not in st.session_state:
+    st.session_state.invite_codes = {}   # code -> {"used": bool, "created_by": user}
 
 def check_login(user, pw):
-    return USERS.get(user) == hashlib.sha256(pw.encode()).hexdigest()
+    entry = st.session_state.users_db.get(user)
+    return entry and entry["pw"] == hashlib.sha256(pw.encode()).hexdigest()
+
+def is_admin(user):
+    entry = st.session_state.users_db.get(user, {})
+    return entry.get("role") == "admin"
+
+def gen_invite_code(created_by):
+    import secrets as sec
+    code = sec.token_urlsafe(8)
+    st.session_state.invite_codes[code] = {"used": False, "created_by": created_by}
+    return code
 
 def login_wall():
     st.markdown(f"<h2>🔒 Portfolio Dashboard</h2>", unsafe_allow_html=True)
-    st.markdown(f"<p class='subtext'>Private access only. Contact the admin to get an account.</p>", unsafe_allow_html=True)
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        with st.form("login"):
-            user = st.text_input("Username")
-            pw   = st.text_input("Password", type="password")
-            ok   = st.form_submit_button("Log in", use_container_width=True)
-            if ok:
-                if check_login(user, pw):
-                    st.session_state.logged_in   = True
-                    st.session_state.current_user = user
-                    st.rerun()
-                else:
-                    st.error("Invalid credentials")
+    auth_tab, reg_tab = st.tabs(["Log in", "Register with invite code"])
+
+    with auth_tab:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            with st.form("login"):
+                user = st.text_input("Username")
+                pw   = st.text_input("Password", type="password")
+                ok   = st.form_submit_button("Log in", use_container_width=True)
+                if ok:
+                    if check_login(user, pw):
+                        st.session_state.logged_in    = True
+                        st.session_state.current_user = user
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password")
+
+    with reg_tab:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown(f"<p class='subtext'>You need an invite code from an existing user.</p>",
+                        unsafe_allow_html=True)
+            with st.form("register"):
+                inv_code  = st.text_input("Invite code")
+                new_user  = st.text_input("Choose username")
+                new_pw    = st.text_input("Choose password", type="password")
+                new_pw2   = st.text_input("Repeat password", type="password")
+                reg_ok    = st.form_submit_button("Create account", use_container_width=True)
+                if reg_ok:
+                    code_entry = st.session_state.invite_codes.get(inv_code)
+                    if not code_entry:
+                        st.error("Invalid invite code")
+                    elif code_entry["used"]:
+                        st.error("This invite code has already been used")
+                    elif not new_user or len(new_user) < 3:
+                        st.error("Username must be at least 3 characters")
+                    elif new_user in st.session_state.users_db:
+                        st.error("Username already taken")
+                    elif new_pw != new_pw2:
+                        st.error("Passwords do not match")
+                    elif len(new_pw) < 6:
+                        st.error("Password must be at least 6 characters")
+                    else:
+                        st.session_state.users_db[new_user] = {
+                            "pw": hashlib.sha256(new_pw.encode()).hexdigest(),
+                            "role": "user",
+                        }
+                        st.session_state.invite_codes[inv_code]["used"] = True
+                        st.success(f"Account created! You can now log in as {new_user}")
 
 
 # ─────────────────────────────────────────────
@@ -1073,6 +1126,34 @@ with tab_dashboard:
                 st.session_state.logged_in = False
                 st.rerun()
 
+        # ── ADMIN: INVITE MANAGEMENT ──
+        if is_admin(user):
+            with st.expander("👤 Manage invites & users"):
+                inv_col1, inv_col2 = st.columns(2)
+                with inv_col1:
+                    st.markdown("**Generate invite link**")
+                    if st.button("🔗 Generate new invite code", use_container_width=True):
+                        code = gen_invite_code(user)
+                        st.session_state["last_invite"] = code
+                    if st.session_state.get("last_invite"):
+                        c = st.session_state["last_invite"]
+                        st.code(c)
+                        st.caption("Share this code. It can only be used once.")
+
+                with inv_col2:
+                    st.markdown("**Active invite codes**")
+                    codes = st.session_state.invite_codes
+                    if codes:
+                        for c, v in codes.items():
+                            status = "✅ used" if v["used"] else "⏳ pending"
+                            st.markdown(f"`{c}` — {status}")
+                    else:
+                        st.caption("No codes generated yet.")
+
+                st.markdown("**Registered users**")
+                for u, data in st.session_state.users_db.items():
+                    st.markdown(f"• `{u}` ({data.get('role','user')})")
+
         # ── MANAGE POSITIONS ──
         with st.expander("➕ Manage positions"):
 
@@ -1296,6 +1377,7 @@ with tab_dashboard:
                             win = max(1, len(pct_series) // 30)
                             pct_smooth = pct_series.rolling(win, min_periods=1, center=True).mean()
 
+                            pct_smooth = pct_smooth.round(2)
                             end_val    = float(pct_smooth.iloc[-1])
                             line_color = "#4ade80" if end_val >= 0 else "#f87171"
                             fill_color = "rgba(74,222,128,0.07)" if end_val >= 0 else "rgba(248,113,113,0.07)"
@@ -1313,7 +1395,7 @@ with tab_dashboard:
                             if compare_spx and "SPY" in h.columns:
                                 spy = h["SPY"].ffill()
                                 spy_pct = (spy / float(spy.iloc[0]) - 1) * 100
-                                spy_smooth = spy_pct.rolling(win, min_periods=1, center=True).mean()
+                                spy_smooth = spy_pct.rolling(win, min_periods=1, center=True).mean().round(2)
                                 fig.add_trace(go.Scatter(
                                     x=spy_smooth.index, y=spy_smooth.values,
                                     mode="lines", name="S&P 500",
