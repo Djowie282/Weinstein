@@ -37,16 +37,16 @@ if "dark_mode" not in st.session_state:
 DARK = st.session_state.dark_mode
 
 if DARK:
-    BG       = "#0d1117"
-    CARD     = "#161b22"
-    BORDER   = "#30363d"
-    TEXT     = "#e6edf3"
-    SUBTEXT  = "#8b949e"
-    GREEN    = "#3fb950"
-    YELLOW   = "#d29922"
-    RED      = "#f85149"
-    BLUE     = "#58a6ff"
-    ACCENT   = "#1f6feb"
+    BG       = "#14171f"
+    CARD     = "#1e2130"
+    BORDER   = "#2e3347"
+    TEXT     = "#dde3f0"
+    SUBTEXT  = "#8892aa"
+    GREEN    = "#4ade80"
+    YELLOW   = "#fbbf24"
+    RED      = "#f87171"
+    BLUE     = "#60a5fa"
+    ACCENT   = "#3b5bdb"
 else:
     BG       = "#f6f8fa"
     CARD     = "#ffffff"
@@ -276,6 +276,27 @@ def fetch_weekly(ticker, years=YEARS_OF_DATA):
     return df.dropna()
 
 @st.cache_data(ttl=3600)
+
+@st.cache_data(ttl=24*3600)
+def get_sector(ticker):
+    MANUAL = {
+        "RIVN": "Consumer Discretionary", "RKLB": "Industrials",
+        "CRWV": "Technology", "BMBL": "Communication Services",
+        "BEPC": "Utilities", "SOFI": "Financials",
+        "UBER": "Industrials", "FOUR": "Financials",
+        "RBRK": "Technology", "EOSE": "Energy",
+        "ARM":  "Technology", "MU":   "Technology",
+        "SMCI": "Technology", "IONQ": "Technology",
+        "PATH": "Technology", "AMBA": "Technology",
+    }
+    if ticker in MANUAL:
+        return MANUAL[ticker]
+    try:
+        info = yf.Ticker(ticker).info
+        return info.get("sector") or info.get("industry") or "-"
+    except:
+        return "-"
+
 def get_mcap(ticker):
     try:
         info = yf.Ticker(ticker).fast_info
@@ -327,17 +348,39 @@ def detect_cross(price, ma, weeks):
     return -1
 
 def base_len(close, ma, cross_wks):
-    c = pd.concat([close, ma], axis=1).dropna()
-    if c.empty: return 0
-    idx = len(c)-2-cross_wks if cross_wks >= 0 else len(c)-1
-    if idx < 0: return 0
-    weeks = 0
-    for i in range(idx, -1, -1):
-        p, m = c.iloc[i,0], c.iloc[i,1]
-        if pd.isna(m) or m == 0: break
-        if abs(p/m - 1) <= BASE_RANGE_PCT: weeks += 1
-        else: break
-    return weeks
+    """
+    Measure base as: weeks from the last time price was at/above the breakout
+    level, going backwards from the breakout point.
+    This captures Weinstein's visual base (e.g. ARM's 2-year consolidation)
+    rather than just the ±15% SMA band.
+    Falls back to SMA-band method if no recent cross.
+    """
+    if cross_wks < 0:
+        # No recent breakout: use SMA band method
+        c = pd.concat([close, ma], axis=1).dropna()
+        if c.empty: return 0
+        idx = len(c) - 1
+        weeks = 0
+        for i in range(idx, -1, -1):
+            p, m = c.iloc[i, 0], c.iloc[i, 1]
+            if pd.isna(m) or m == 0: break
+            if abs(p / m - 1) <= BASE_RANGE_PCT: weeks += 1
+            else: break
+        return weeks
+
+    # Breakout-based method: find when price was last at the breakout level
+    breakout_idx = len(close) - 1 - cross_wks
+    if breakout_idx < 5: return 0
+    breakout_price = float(close.iloc[breakout_idx])
+    # Walk backwards from breakout: find last week price was >= 90% of breakout price
+    # That marks the END of the prior trend (start of the base)
+    base_start = 0
+    for i in range(breakout_idx - 1, -1, -1):
+        p = float(close.iloc[i])
+        if p >= breakout_price * 0.92:
+            base_start = i
+            break
+    return breakout_idx - base_start
 
 def bq(w):
     if w < 15: return "Short"
@@ -910,7 +953,7 @@ with tab_portfolio:
         rows = []
         for _, r in port_df.iterrows():
             tk    = r["ticker"]
-            sec   = TICKER_SECTOR.get(tk, "–")
+            sec   = TICKER_SECTOR.get(tk) or get_sector(tk)
             vol   = r["vol"]
             cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
 
@@ -966,155 +1009,298 @@ with tab_portfolio:
 # TAB 5: DASHBOARD (login-protected)
 # ═══════════════════════════════════════════════
 
+@st.cache_data(ttl=3600)
+def get_portfolio_history(tickers_json, period="1y"):
+    """Fetch daily closing prices for portfolio tickers."""
+    tickers = json.loads(tickers_json)
+    end   = datetime.today()
+    start = end - timedelta(days=365)
+    try:
+        raw = yf.download(tickers, start=start, end=end,
+                          auto_adjust=True, progress=False)["Close"]
+        if isinstance(raw, pd.Series):
+            raw = raw.to_frame(tickers[0])
+        return raw.ffill()
+    except:
+        return pd.DataFrame()
+
+def calc_period_return(hist, tickers, cost_map, label):
+    """Calculate portfolio return over a period relative to today."""
+    if hist.empty: return None
+    periods = {"1D": 1, "1W": 5, "1M": 21, "3M": 63, "YTD": None}
+    n = periods.get(label)
+    if label == "YTD":
+        start_of_year = pd.Timestamp(datetime.today().year, 1, 1)
+        hist_filtered = hist[hist.index >= start_of_year]
+        if hist_filtered.empty: return None
+        start_prices = hist_filtered.iloc[0]
+    elif n is None:
+        return None
+    else:
+        if len(hist) < n + 1: return None
+        start_prices = hist.iloc[-(n+1)]
+    end_prices = hist.iloc[-1]
+    total_start = 0; total_end = 0
+    for tk in tickers:
+        if tk not in hist.columns: continue
+        sh, ac = cost_map.get(tk, (1, 1))
+        sp = float(start_prices.get(tk, 0)) if tk in start_prices.index else 0
+        ep = float(end_prices.get(tk, 0)) if tk in end_prices.index else 0
+        if sp > 0 and ep > 0:
+            total_start += sp * sh
+            total_end   += ep * sh
+    if total_start == 0: return None
+    return (total_end / total_start - 1) * 100
+
 with tab_dashboard:
     if not st.session_state.get("logged_in"):
         login_wall()
     else:
-        user = st.session_state.current_user
+        import plotly.graph_objects as go
+        import plotly.express as px
+
+        user      = st.session_state.current_user
         portfolio = st.session_state.portfolios.get(user, [])
 
         col_dash, col_logout = st.columns([5,1])
         with col_dash:
-            st.markdown(f"### 🏛 Private Dashboard — {user.title()}")
+            st.markdown(f"### 🏛 Portfolio Dashboard — {user.title()}")
         with col_logout:
             if st.button("Log out"):
                 st.session_state.logged_in = False
                 st.rerun()
 
-        st.markdown(f"<span class='subtext'>Your private portfolio. Data is stored in your session.</span>", unsafe_allow_html=True)
-
-        # Add position
-        with st.expander("➕ Add / manage positions"):
+        # Manage positions
+        with st.expander("➕ Manage positions"):
             col_a, col_b, col_c, col_d = st.columns(4)
-            new_tk    = col_a.text_input("Ticker").upper().strip()
-            new_sh    = col_b.number_input("Shares", min_value=0.0, step=0.01, value=1.0)
-            new_cost  = col_c.number_input("Avg cost ($)", min_value=0.0, step=0.01, value=0.0)
-            new_note  = col_d.text_input("Notes")
+            new_tk   = col_a.text_input("Ticker").upper().strip()
+            new_sh   = col_b.number_input("Shares", min_value=0.0, step=0.01, value=1.0)
+            new_cost = col_c.number_input("Avg cost ($)", min_value=0.0, step=0.01, value=0.0)
+            new_note = col_d.text_input("Notes")
             if st.button("Add position"):
                 if new_tk:
-                    portfolio.append({"ticker": new_tk, "shares": new_sh, "avg_cost": new_cost, "notes": new_note})
+                    portfolio.append({"ticker": new_tk, "shares": new_sh,
+                                      "avg_cost": new_cost, "notes": new_note})
                     st.session_state.portfolios[user] = portfolio
                     st.success(f"Added {new_tk}")
                     st.rerun()
-
             if portfolio:
-                st.markdown("**Current positions:**")
                 for i, pos in enumerate(portfolio):
-                    c1, c2, c3, c4, c5 = st.columns([2,1,2,3,1])
+                    c1,c2,c3,c4,c5 = st.columns([2,1,2,3,1])
                     c1.markdown(f"**{pos['ticker']}**")
                     c2.markdown(f"{pos['shares']} sh")
-                    c3.markdown(f"Avg ${pos['avg_cost']:.2f}" if pos['avg_cost'] > 0 else "No avg cost")
+                    c3.markdown(f"Avg ${pos['avg_cost']:.2f}" if pos['avg_cost'] > 0 else "–")
                     c4.markdown(pos.get("notes",""))
                     if c5.button("🗑", key=f"del_{i}"):
-                        portfolio.pop(i)
-                        st.session_state.portfolios[user] = portfolio
-                        st.rerun()
+                        portfolio.pop(i); st.session_state.portfolios[user] = portfolio; st.rerun()
 
         if not portfolio:
             st.info("Add positions above to get started.")
         else:
-            tickers = [p["ticker"] for p in portfolio]
-            with st.spinner("Loading portfolio data..."):
-                port_df = scan_tickers(json.dumps(tickers), spx_close_json)
+            tickers   = [p["ticker"] for p in portfolio]
+            cost_map  = {p["ticker"]: (p["shares"], p["avg_cost"]) for p in portfolio}
 
-            if not port_df.empty:
-                # Enrich with cost basis
-                cost_map = {p["ticker"]: (p["shares"], p["avg_cost"]) for p in portfolio}
+            with st.spinner("Loading portfolio..."):
+                port_df  = scan_tickers(json.dumps(tickers), spx_close_json)
+                hist     = get_portfolio_history(json.dumps(tickers))
 
-                total_value   = 0
-                total_cost    = 0
+            if port_df.empty:
+                st.warning("Could not load data.")
+            else:
+                # ── Compute current values ──
                 position_data = []
+                total_value = 0; total_cost = 0
 
                 for _, r in port_df.iterrows():
                     tk = r["ticker"]
                     sh, ac = cost_map.get(tk, (1, 0))
-                    price  = r["price"] or 0
-                    val    = price * sh
-                    cost   = ac * sh
-                    pnl    = val - cost if ac > 0 else None
-                    pnl_pct= (val/cost - 1)*100 if (ac > 0 and cost > 0) else None
+                    price = r["price"] or 0
+                    val   = price * sh
+                    cost  = ac * sh
+                    pnl   = val - cost if ac > 0 else None
+                    pnl_pct = (val/cost - 1)*100 if (ac > 0 and cost > 0) else None
                     total_value += val
-                    total_cost  += cost if ac > 0 else 0
-                    position_data.append({
-                        "r": r, "sh": sh, "ac": ac, "val": val,
-                        "pnl": pnl, "pnl_pct": pnl_pct
-                    })
+                    if ac > 0: total_cost += cost
+                    position_data.append({"r": r, "sh": sh, "ac": ac,
+                                          "val": val, "pnl": pnl, "pnl_pct": pnl_pct})
 
-                # Top metrics
-                total_pnl = total_value - total_cost if total_cost > 0 else None
+                total_pnl     = total_value - total_cost if total_cost > 0 else None
                 total_pnl_pct = (total_value/total_cost - 1)*100 if total_cost > 0 else None
 
+                # ── Period returns ──
+                periods = ["1D","1W","1M","3M","YTD"]
+                period_rets = {p: calc_period_return(hist, tickers, cost_map, p) for p in periods}
+
+                # ── TOP BAR METRICS ──
                 st.markdown("---")
-                m1, m2, m3, m4, m5 = st.columns(5)
-                m1.metric("Positions",    len(portfolio))
-                m2.metric("Total Value",  f"${total_value:,.0f}" if total_value > 0 else "–")
+                cols = st.columns(7)
+                cols[0].metric("Positions", len(portfolio))
+                cols[1].metric("Total Value", f"${total_value:,.0f}" if total_value > 0 else "–")
                 if total_pnl is not None:
-                    m3.metric("Total P&L", f"${total_pnl:+,.0f}", f"{total_pnl_pct:+.1f}%")
-                n_s2 = sum(1 for pd_ in position_data if pd_["r"]["score"] >= 4)
-                n_s4 = sum(1 for pd_ in position_data if "Stage 4" in pd_["r"]["stage"])
-                m4.metric("In Stage 2",   n_s2)
-                m5.metric("Stage 4 risk", n_s4, delta="Sell" if n_s4 > 0 else "Clear", delta_color="inverse" if n_s4 > 0 else "off")
+                    cols[2].metric("Total P&L", f"${total_pnl:+,.0f}",
+                                   f"{total_pnl_pct:+.1f}%",
+                                   delta_color="normal")
+                for i, p in enumerate(["1D","1W","1M","YTD"]):
+                    ret = period_rets.get(p)
+                    val_str = f"{ret:+.2f}%" if ret is not None else "–"
+                    cols[3+i].metric(p, val_str,
+                                     delta_color="normal" if ret and ret >= 0 else "inverse")
 
-                # Position cards
                 st.markdown("---")
+
+                # ── CHARTS ROW ──
+                chart_col, dist_col = st.columns([3, 2])
+
+                # Performance chart
+                with chart_col:
+                    st.markdown("#### Performance")
+                    if not hist.empty:
+                        # Compute combined portfolio value over time
+                        port_hist = pd.Series(dtype=float)
+                        base_val  = 0
+                        for tk in tickers:
+                            if tk not in hist.columns: continue
+                            sh, ac = cost_map.get(tk, (1, 0))
+                            if ac > 0:
+                                base_val += ac * sh
+                        if base_val > 0:
+                            daily_vals = pd.Series(0.0, index=hist.index)
+                            for tk in tickers:
+                                if tk not in hist.columns: continue
+                                sh, ac = cost_map.get(tk, (1, 0))
+                                if ac > 0:
+                                    daily_vals += hist[tk].fillna(method="ffill") * sh
+                            pct_series = (daily_vals / base_val - 1) * 100
+                            spx_hist = hist.get("SPY")
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(
+                                x=pct_series.index, y=pct_series.values,
+                                mode="lines", name="Portfolio",
+                                line=dict(color="#60a5fa", width=2),
+                                fill="tozeroy",
+                                fillcolor="rgba(96,165,250,0.08)"
+                            ))
+                            fig.add_hline(y=0, line_dash="dash",
+                                          line_color="rgba(255,255,255,0.2)", line_width=1)
+                            fig.update_layout(
+                                height=280,
+                                margin=dict(l=0,r=0,t=10,b=0),
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                font=dict(color=TEXT, family="Syne"),
+                                xaxis=dict(showgrid=False, color=SUBTEXT, tickfont=dict(size=10)),
+                                yaxis=dict(showgrid=True, gridcolor=BORDER,
+                                           tickformat="+.1f", ticksuffix="%",
+                                           color=SUBTEXT, tickfont=dict(size=10)),
+                                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT)),
+                                hovermode="x unified",
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.caption("Add avg costs to see performance chart.")
+                    else:
+                        st.caption("Performance history unavailable.")
+
+                # Distribution treemap
+                with dist_col:
+                    st.markdown("#### Distribution")
+                    if position_data:
+                        tree_labels  = [pd_["r"]["ticker"] for pd_ in position_data if pd_["val"] > 0]
+                        tree_values  = [pd_["val"] for pd_ in position_data if pd_["val"] > 0]
+                        tree_pnl     = [pd_["pnl_pct"] for pd_ in position_data if pd_["val"] > 0]
+                        tree_colors  = []
+                        for p in tree_pnl:
+                            if p is None: tree_colors.append(0)
+                            else: tree_colors.append(p)
+                        fig2 = go.Figure(go.Treemap(
+                            labels=tree_labels,
+                            parents=[""] * len(tree_labels),
+                            values=tree_values,
+                            customdata=[[f"{p:+.1f}%" if p is not None else "–"] for p in tree_pnl],
+                            texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+                            marker=dict(
+                                colors=tree_colors,
+                                colorscale=[[0,"#7f1d1d"],[0.5,"#1e2130"],[1,"#14532d"]],
+                                cmid=0,
+                                showscale=False,
+                            ),
+                        ))
+                        fig2.update_layout(
+                            height=280, margin=dict(l=0,r=0,t=0,b=0),
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color="white", family="Syne", size=12),
+                        )
+                        st.plotly_chart(fig2, use_container_width=True)
+
+                st.markdown("---")
+
+                # ── POSITION GRID ──
                 st.markdown("#### Positions")
+                sorted_pos = sorted(position_data,
+                                    key=lambda x: (x["r"]["score"], x["r"]["rs"] or -99),
+                                    reverse=True)
 
-                sorted_pos = sorted(position_data, key=lambda x: (x["r"]["score"], x["r"]["rs"] or -99), reverse=True)
+                # 3-column grid
+                cols3 = st.columns(3)
+                for i, pd_ in enumerate(sorted_pos):
+                    r       = pd_["r"]
+                    tk      = r["ticker"]
+                    sh      = pd_["sh"]
+                    ac      = pd_["ac"]
+                    val     = pd_["val"]
+                    pnl     = pd_["pnl"]
+                    pnl_pct = pd_["pnl_pct"]
+                    stage   = r["stage"]
 
-                for pd_ in sorted_pos:
-                    r      = pd_["r"]
-                    tk     = r["ticker"]
-                    sh     = pd_["sh"]
-                    ac     = pd_["ac"]
-                    val    = pd_["val"]
-                    pnl    = pd_["pnl"]
-                    pnl_pct= pd_["pnl_pct"]
-                    stage  = r["stage"]
+                    if "Stage 2" in stage:   s_color = GREEN;  s_dot = "🟢"
+                    elif "Stage 3" in stage: s_color = YELLOW; s_dot = "🟡"
+                    elif "Stage 4" in stage: s_color = RED;    s_dot = "🔴"
+                    else:                    s_color = BLUE;   s_dot = "🔵"
 
-                    if "Stage 2" in stage: s_color = GREEN; s_icon = "●"
-                    elif "Stage 3" in stage: s_color = YELLOW; s_icon = "●"
-                    elif "Stage 4" in stage: s_color = RED; s_icon = "●"
-                    else: s_color = BLUE; s_icon = "●"
-
-                    pnl_str = ""
+                    pnl_html = ""
                     if pnl is not None:
-                        pnl_color = GREEN if pnl >= 0 else RED
-                        pnl_str = f'&nbsp;|&nbsp; <span style="color:{pnl_color}">P&L ${pnl:+,.0f} ({pnl_pct:+.1f}%)</span>'
+                        pc = GREEN if pnl >= 0 else RED
+                        sign = "+" if pnl >= 0 else ""
+                        pnl_html = f'<span style="color:{pc};font-weight:700">{sign}${pnl:,.0f} ({pnl_pct:+.1f}%)</span>'
 
                     sig = sig_icon(r)
-                    sig_html = f'&nbsp;<strong style="color:{GREEN}">{sig}</strong>' if sig else ""
 
-                    st.markdown(f"""
-                    <div class="card-s2">
-                      <span style="color:{s_color};font-size:1.1rem">{s_icon}</span>&nbsp;
-                      <strong style="font-size:1.05rem">{tk}</strong>&nbsp;
-                      <span class='subtext'>{sh:.0f} shares @ ${ac:.2f}</span>
-                      {sig_html}
-                      <br>
-                      <span style='font-size:0.85rem'>
-                        Stage: <strong style="color:{s_color}">{stage}</strong> &nbsp;|&nbsp;
-                        Score: {r['score']}/5 &nbsp;|&nbsp;
-                        Price: {fmt(r['price'])} &nbsp;|&nbsp;
-                        {fmt(r['pct_above'],'%',1)} vs SMA &nbsp;|&nbsp;
-                        RS: {fmt(r['rs'],'',1)} ({rs_tag(r['rs'])}) &nbsp;|&nbsp;
-                        Stop: {fmt(r['stop'])} ({fmt(r['risk'],'%',1)})
-                        {pnl_str}
-                      </span>
-                    </div>""", unsafe_allow_html=True)
+                    with cols3[i % 3]:
+                        st.markdown(f"""
+                        <div style="background:{CARD};border:1px solid {BORDER};border-radius:10px;
+                             padding:14px 16px;margin-bottom:10px;">
+                          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                            <span style="font-size:1.1rem;font-weight:800">{s_dot} {tk}</span>
+                            <span style="color:{SUBTEXT};font-size:0.8rem">{sh:.0f} sh</span>
+                          </div>
+                          <div style="font-size:1.4rem;font-weight:700;margin-bottom:2px">${r['price'] or 0:,.2f}</div>
+                          <div style="font-size:0.82rem;margin-bottom:8px">{pnl_html if pnl_html else f'<span style="color:{SUBTEXT}">No cost basis</span>'}</div>
+                          <div style="font-size:0.78rem;color:{SUBTEXT};line-height:1.6">
+                            <span style="color:{s_color}">{stage}</span> · Score {r['score']}/5<br>
+                            RS {fmt(r['rs'],'',1)} · {fmt(r['pct_above'],'%',1)} vs SMA<br>
+                            Stop: {fmt(r['stop'])} ({fmt(r['risk'],'%',1)})<br>
+                            {f'<strong style="color:{GREEN}">{sig}</strong>' if sig else ''}
+                          </div>
+                        </div>""", unsafe_allow_html=True)
 
-                # Stage 4 warnings
+                # ── STAGE 4 WARNINGS ──
                 s4_pos = [pd_ for pd_ in position_data if "Stage 4" in pd_["r"]["stage"]]
                 if s4_pos:
                     st.markdown("---")
-                    st.markdown(f"#### ⚠️ Action Required — Stage 4 Positions")
+                    st.markdown("#### ⚠️ Action Required — Stage 4 Positions")
                     for pd_ in s4_pos:
                         r = pd_["r"]
+                        note = ""
+                        rs = r["rs"]
+                        if rs is not None and not (isinstance(rs, float) and pd.isna(rs)) and rs > 5:
+                            note = f" · <em>Note: High RS ({rs:+.0f}) = temporary bounce in downtrend, not a buy signal.</em>"
                         st.markdown(f"""<div class="card-warn">
-                            <strong style="color:{RED}">STAGE 4 — WEINSTEIN SAYS EXIT</strong><br>
+                            <strong style="color:{RED}">STAGE 4 — EXIT</strong> &nbsp;
                             <strong>{r['ticker']}</strong> &nbsp;|&nbsp;
-                            Price {fmt(r['price'])} is {fmt(r['pct_above'],'%',1)} vs 50w SMA &nbsp;|&nbsp;
-                            RS {fmt(r['rs'],'',1)} ({rs_tag(r['rs'])}) &nbsp;|&nbsp;
-                            Stop should have triggered at {fmt(r['stop'])}
+                            ${r['price'] or 0:,.2f} &nbsp;|&nbsp;
+                            {fmt(r['pct_above'],'%',1)} vs SMA &nbsp;|&nbsp;
+                            RS {fmt(r['rs'],'',1)} ({rs_tag(r['rs'])})
+                            {note}
                         </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
