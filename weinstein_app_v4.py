@@ -1070,48 +1070,104 @@ with tab_dashboard:
                 st.session_state.logged_in = False
                 st.rerun()
 
-        # Manage positions
+        # ── MANAGE POSITIONS ──
         with st.expander("➕ Manage positions"):
+
+            # --- BUY / ADD ---
+            st.markdown("**Buy / Add shares**")
             col_a, col_b, col_c, col_d = st.columns(4)
             new_tk   = col_a.text_input("Ticker").upper().strip()
             new_sh   = col_b.number_input("Shares", min_value=0.0, step=0.01, value=1.0)
             new_cost = col_c.number_input("Avg cost ($)", min_value=0.0, step=0.01, value=0.0)
             new_note = col_d.text_input("Notes")
-            if st.button("Add position"):
+            if st.button("➕ Add / Buy", use_container_width=True):
                 if new_tk:
-                    # Check if ticker already exists — if so, merge (weighted avg cost)
                     existing = next((p for p in portfolio if p["ticker"] == new_tk), None)
                     if existing:
-                        old_sh   = existing["shares"]
-                        old_cost = existing["avg_cost"]
+                        old_sh = existing["shares"]; old_cost = existing["avg_cost"]
                         new_total_sh = old_sh + new_sh
                         if new_cost > 0 and old_cost > 0:
-                            # Weighted average cost
                             new_avg = (old_sh * old_cost + new_sh * new_cost) / new_total_sh
                         elif new_cost > 0:
                             new_avg = new_cost
                         else:
                             new_avg = old_cost
-                        existing["shares"]   = new_total_sh
+                        existing["shares"] = new_total_sh
                         existing["avg_cost"] = round(new_avg, 4)
-                        if new_note:
-                            existing["notes"] = new_note
-                        st.success(f"Updated {new_tk}: {new_total_sh:.1f} sh @ ${new_avg:.2f} avg")
+                        if new_note: existing["notes"] = new_note
+                        st.success(f"Updated {new_tk}: {new_total_sh:.2f} sh @ ${new_avg:.2f} avg")
                     else:
                         portfolio.append({"ticker": new_tk, "shares": new_sh,
                                           "avg_cost": new_cost, "notes": new_note})
                         st.success(f"Added {new_tk}")
                     st.session_state.portfolios[user] = portfolio
                     st.rerun()
+
+            st.markdown("---")
+
+            # --- SELL (partial or full) ---
+            st.markdown("**Sell shares**")
+            tickers_in_port = [p["ticker"] for p in portfolio]
+            if tickers_in_port:
+                sell_col1, sell_col2, sell_col3 = st.columns(3)
+                sell_tk = sell_col1.selectbox("Ticker to sell", tickers_in_port)
+                pos_to_sell = next((p for p in portfolio if p["ticker"] == sell_tk), None)
+                max_sh = pos_to_sell["shares"] if pos_to_sell else 1.0
+                sell_sh = sell_col2.number_input(
+                    f"Shares (max {max_sh:.2f})", min_value=0.01,
+                    max_value=float(max_sh), step=0.01, value=float(max_sh)
+                )
+                sell_full = sell_col3.checkbox("Sell entire position", value=(sell_sh >= max_sh))
+
+                if st.button("🔴 Sell shares", use_container_width=True):
+                    if pos_to_sell:
+                        if sell_full or sell_sh >= max_sh:
+                            st.session_state[f"confirm_delete_{sell_tk}"] = True
+                        else:
+                            pos_to_sell["shares"] = round(max_sh - sell_sh, 4)
+                            st.session_state.portfolios[user] = portfolio
+                            st.success(f"Sold {sell_sh:.2f} sh of {sell_tk}. Remaining: {pos_to_sell['shares']:.2f} sh")
+                            st.rerun()
+
+                # Confirm full delete
+                if st.session_state.get(f"confirm_delete_{sell_tk}"):
+                    st.warning(f"⚠️ Remove **{sell_tk}** entirely from your portfolio?")
+                    c_yes, c_no = st.columns(2)
+                    if c_yes.button("✅ Yes, remove", key=f"yes_{sell_tk}"):
+                        portfolio[:] = [p for p in portfolio if p["ticker"] != sell_tk]
+                        st.session_state.portfolios[user] = portfolio
+                        st.session_state.pop(f"confirm_delete_{sell_tk}", None)
+                        st.success(f"Removed {sell_tk}")
+                        st.rerun()
+                    if c_no.button("❌ Cancel", key=f"no_{sell_tk}"):
+                        st.session_state.pop(f"confirm_delete_{sell_tk}", None)
+                        st.rerun()
+
+            st.markdown("---")
+
+            # --- CURRENT POSITIONS LIST ---
             if portfolio:
+                st.markdown("**Current positions**")
                 for i, pos in enumerate(portfolio):
                     c1,c2,c3,c4,c5 = st.columns([2,1,2,3,1])
                     c1.markdown(f"**{pos['ticker']}**")
-                    c2.markdown(f"{pos['shares']} sh")
+                    c2.markdown(f"{pos['shares']:.2f} sh")
                     c3.markdown(f"Avg ${pos['avg_cost']:.2f}" if pos['avg_cost'] > 0 else "–")
                     c4.markdown(pos.get("notes",""))
-                    if c5.button("🗑", key=f"del_{i}"):
-                        portfolio.pop(i); st.session_state.portfolios[user] = portfolio; st.rerun()
+                    # Delete with confirmation
+                    if c5.button("🗑", key=f"del_{i}_{pos['ticker']}"):
+                        st.session_state[f"confirm_delete_{pos['ticker']}_{i}"] = True
+                    if st.session_state.get(f"confirm_delete_{pos['ticker']}_{i}"):
+                        st.warning(f"Remove **{pos['ticker']}**?")
+                        y, n = st.columns(2)
+                        if y.button("Yes", key=f"y_{i}"):
+                            portfolio.pop(i)
+                            st.session_state.portfolios[user] = portfolio
+                            st.session_state.pop(f"confirm_delete_{pos['ticker']}_{i}", None)
+                            st.rerun()
+                        if n.button("No", key=f"n_{i}"):
+                            st.session_state.pop(f"confirm_delete_{pos['ticker']}_{i}", None)
+                            st.rerun()
 
         if not portfolio:
             st.info("Add positions above to get started.")
@@ -1167,89 +1223,80 @@ with tab_dashboard:
 
                 st.markdown("---")
 
-                # ── CHARTS ROW ──
-                chart_col, dist_col = st.columns([3, 2])
+                # ── PERFORMANCE CHART (full width) ──
+                st.markdown("#### Performance")
+                if True:
+                    chart_col = st  # full width
+                    dist_col  = None
 
-                # Performance chart
-                with chart_col:
-                    st.markdown("#### Performance")
-                    if not hist.empty:
-                        # Compute combined portfolio value over time
-                        port_hist = pd.Series(dtype=float)
-                        base_val  = 0
+                # Performance chart — full width
+                if not hist.empty:
+                    base_val = 0
+                    for tk in tickers:
+                        sh, ac = cost_map.get(tk, (1, 0))
+                        if ac > 0: base_val += ac * sh
+                    if base_val > 0:
+                        daily_vals = pd.Series(0.0, index=hist.index)
                         for tk in tickers:
                             if tk not in hist.columns: continue
                             sh, ac = cost_map.get(tk, (1, 0))
                             if ac > 0:
-                                base_val += ac * sh
-                        if base_val > 0:
-                            daily_vals = pd.Series(0.0, index=hist.index)
-                            for tk in tickers:
-                                if tk not in hist.columns: continue
-                                sh, ac = cost_map.get(tk, (1, 0))
-                                if ac > 0:
-                                    daily_vals += hist[tk].ffill() * sh
-                            pct_series = (daily_vals / base_val - 1) * 100
-                            spx_hist = hist.get("SPY")
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(
-                                x=pct_series.index, y=pct_series.values,
-                                mode="lines", name="Portfolio",
-                                line=dict(color="#60a5fa", width=2),
-                                fill="tozeroy",
-                                fillcolor="rgba(96,165,250,0.08)"
-                            ))
-                            fig.add_hline(y=0, line_dash="dash",
-                                          line_color="rgba(255,255,255,0.2)", line_width=1)
-                            fig.update_layout(
-                                height=280,
-                                margin=dict(l=0,r=0,t=10,b=0),
-                                paper_bgcolor="rgba(0,0,0,0)",
-                                plot_bgcolor="rgba(0,0,0,0)",
-                                font=dict(color=TEXT, family="Syne"),
-                                xaxis=dict(showgrid=False, color=SUBTEXT, tickfont=dict(size=10)),
-                                yaxis=dict(showgrid=True, gridcolor=BORDER,
-                                           tickformat="+.1f", ticksuffix="%",
-                                           color=SUBTEXT, tickfont=dict(size=10)),
-                                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT)),
-                                hovermode="x unified",
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.caption("Add avg costs to see performance chart.")
-                    else:
-                        st.caption("Performance history unavailable.")
-
-                # Distribution treemap
-                with dist_col:
-                    st.markdown("#### Distribution")
-                    if position_data:
-                        tree_labels  = [pd_["r"]["ticker"] for pd_ in position_data if pd_["val"] > 0]
-                        tree_values  = [pd_["val"] for pd_ in position_data if pd_["val"] > 0]
-                        tree_pnl     = [pd_["pnl_pct"] for pd_ in position_data if pd_["val"] > 0]
-                        tree_colors  = []
-                        for p in tree_pnl:
-                            if p is None: tree_colors.append(0)
-                            else: tree_colors.append(p)
-                        fig2 = go.Figure(go.Treemap(
-                            labels=tree_labels,
-                            parents=[""] * len(tree_labels),
-                            values=tree_values,
-                            customdata=[[f"{p:+.1f}%" if p is not None else "–"] for p in tree_pnl],
-                            texttemplate="<b>%{label}</b><br>%{customdata[0]}",
-                            marker=dict(
-                                colors=tree_colors,
-                                colorscale=[[0,"#7f1d1d"],[0.5,"#1e2130"],[1,"#14532d"]],
-                                cmid=0,
-                                showscale=False,
-                            ),
+                                daily_vals += hist[tk].ffill() * sh
+                        pct_series = (daily_vals / base_val - 1) * 100
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=pct_series.index, y=pct_series.values,
+                            mode="lines", name="Portfolio",
+                            line=dict(color="#60a5fa", width=2.5),
+                            fill="tozeroy", fillcolor="rgba(96,165,250,0.07)"
                         ))
-                        fig2.update_layout(
-                            height=280, margin=dict(l=0,r=0,t=0,b=0),
+                        fig.add_hline(y=0, line_dash="dash",
+                                      line_color="rgba(200,200,200,0.25)", line_width=1)
+                        fig.update_layout(
+                            height=320, margin=dict(l=0,r=0,t=10,b=0),
                             paper_bgcolor="rgba(0,0,0,0)",
-                            font=dict(color="white", family="Syne", size=12),
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color=TEXT, family="Syne"),
+                            xaxis=dict(showgrid=False, color=SUBTEXT, tickfont=dict(size=11)),
+                            yaxis=dict(showgrid=True, gridcolor=BORDER,
+                                       tickformat="+.1f", ticksuffix="%",
+                                       color=SUBTEXT, tickfont=dict(size=11)),
+                            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT)),
+                            hovermode="x unified",
                         )
-                        st.plotly_chart(fig2, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("Add avg costs per position to see the performance chart.")
+                else:
+                    st.caption("Performance history unavailable.")
+
+                st.markdown("---")
+
+                # Distribution treemap — full width
+                st.markdown("#### Distribution")
+                if position_data:
+                    tree_labels = [pd_["r"]["ticker"] for pd_ in position_data if pd_["val"] > 0]
+                    tree_values = [pd_["val"] for pd_ in position_data if pd_["val"] > 0]
+                    tree_pnl    = [pd_["pnl_pct"] for pd_ in position_data if pd_["val"] > 0]
+                    tree_colors = [p if p is not None else 0 for p in tree_pnl]
+                    fig2 = go.Figure(go.Treemap(
+                        labels=tree_labels,
+                        parents=[""] * len(tree_labels),
+                        values=tree_values,
+                        customdata=[[f"{p:+.1f}%" if p is not None else "–"] for p in tree_pnl],
+                        texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+                        marker=dict(
+                            colors=tree_colors,
+                            colorscale=[[0,"#7f1d1d"],[0.45,"#1e2130"],[1,"#14532d"]],
+                            cmid=0, showscale=False,
+                        ),
+                    ))
+                    fig2.update_layout(
+                        height=260, margin=dict(l=0,r=0,t=0,b=0),
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        font=dict(color="white", family="Syne", size=13),
+                    )
+                    st.plotly_chart(fig2, use_container_width=True)
 
                 st.markdown("---")
 
