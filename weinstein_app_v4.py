@@ -212,29 +212,36 @@ AI_UNIVERSE = {
 # ─────────────────────────────────────────────
 
 # ── AUTH SYSTEM ──
-# Seed admin account
+# st.cache_resource = server-level singleton shared across ALL user sessions.
+# This means invite codes and registered accounts persist across different browsers
+# as long as the Streamlit server keeps running.
+
 _ADMIN_HASH = hashlib.sha256("weinstein2026".encode()).hexdigest()
 
-if "users_db" not in st.session_state:
-    st.session_state.users_db = {
-        "joey": {"pw": _ADMIN_HASH, "role": "admin"},
+@st.cache_resource
+def get_shared_auth():
+    """Shared auth store — same object for every visitor on this server."""
+    return {
+        "users": {
+            "joey": {"pw": _ADMIN_HASH, "role": "admin"},
+        },
+        "invite_codes": {},  # code -> {"used": bool, "created_by": str}
     }
 
-if "invite_codes" not in st.session_state:
-    st.session_state.invite_codes = {}   # code -> {"used": bool, "created_by": user}
-
 def check_login(user, pw):
-    entry = st.session_state.users_db.get(user)
+    db = get_shared_auth()
+    entry = db["users"].get(user)
     return entry and entry["pw"] == hashlib.sha256(pw.encode()).hexdigest()
 
 def is_admin(user):
-    entry = st.session_state.users_db.get(user, {})
-    return entry.get("role") == "admin"
+    db = get_shared_auth()
+    return db["users"].get(user, {}).get("role") == "admin"
 
 def gen_invite_code(created_by):
     import secrets as sec
+    db   = get_shared_auth()
     code = sec.token_urlsafe(8)
-    st.session_state.invite_codes[code] = {"used": False, "created_by": created_by}
+    db["invite_codes"][code] = {"used": False, "created_by": created_by}
     return code
 
 def login_wall():
@@ -268,26 +275,31 @@ def login_wall():
                 new_pw2   = st.text_input("Repeat password", type="password")
                 reg_ok    = st.form_submit_button("Create account", use_container_width=True)
                 if reg_ok:
-                    code_entry = st.session_state.invite_codes.get(inv_code)
+                    db = get_shared_auth()
+                    code_entry = db["invite_codes"].get(inv_code)
                     if not code_entry:
                         st.error("Invalid invite code")
                     elif code_entry["used"]:
                         st.error("This invite code has already been used")
                     elif not new_user or len(new_user) < 3:
                         st.error("Username must be at least 3 characters")
-                    elif new_user in st.session_state.users_db:
+                    elif new_user in db["users"]:
                         st.error("Username already taken")
                     elif new_pw != new_pw2:
                         st.error("Passwords do not match")
                     elif len(new_pw) < 6:
                         st.error("Password must be at least 6 characters")
                     else:
-                        st.session_state.users_db[new_user] = {
+                        db["users"][new_user] = {
                             "pw": hashlib.sha256(new_pw.encode()).hexdigest(),
                             "role": "user",
                         }
-                        st.session_state.invite_codes[inv_code]["used"] = True
-                        st.success(f"Account created! You can now log in as {new_user}")
+                        db["invite_codes"][inv_code]["used"] = True
+                        # Init empty portfolio for new user
+                        if "portfolios" not in st.session_state:
+                            st.session_state.portfolios = {}
+                        st.session_state.portfolios[new_user] = []
+                        st.success(f"✅ Account created! You can now log in as **{new_user}**.")
 
 
 # ─────────────────────────────────────────────
@@ -327,8 +339,6 @@ def fetch_weekly(ticker, years=YEARS_OF_DATA):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df.dropna()
-
-@st.cache_data(ttl=3600)
 
 @st.cache_data(ttl=24*3600)
 def get_sector(ticker):
@@ -1142,7 +1152,8 @@ with tab_dashboard:
 
                 with inv_col2:
                     st.markdown("**Active invite codes**")
-                    codes = st.session_state.invite_codes
+                    db    = get_shared_auth()
+                    codes = db["invite_codes"]
                     if codes:
                         for c, v in codes.items():
                             status = "✅ used" if v["used"] else "⏳ pending"
@@ -1151,7 +1162,8 @@ with tab_dashboard:
                         st.caption("No codes generated yet.")
 
                 st.markdown("**Registered users**")
-                for u, data in st.session_state.users_db.items():
+                db = get_shared_auth()
+                for u, data in db["users"].items():
                     st.markdown(f"• `{u}` ({data.get('role','user')})")
 
         # ── MANAGE POSITIONS ──
