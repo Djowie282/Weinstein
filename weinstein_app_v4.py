@@ -10,6 +10,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from io import StringIO
 import json
 import hashlib
 import warnings
@@ -440,7 +441,7 @@ def scan_sectors():
 
 @st.cache_data(ttl=6*3600, show_spinner=False)
 def scan_sector_stocks(spx_close_json):
-    spx_close = pd.read_json(spx_close_json, typ="series")
+    spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
     results = {}
     for tk, stocks in SECTOR_STOCKS.items():
         rows = []
@@ -458,7 +459,7 @@ def scan_sector_stocks(spx_close_json):
 
 @st.cache_data(ttl=6*3600, show_spinner=False)
 def scan_ai_universe(spx_close_json):
-    spx_close = pd.read_json(spx_close_json, typ="series")
+    spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
     rows = []
     for tk, nm in AI_UNIVERSE.items():
         df = fetch_weekly(tk)
@@ -471,7 +472,7 @@ def scan_ai_universe(spx_close_json):
 @st.cache_data(ttl=6*3600, show_spinner=False)
 def scan_tickers(tickers_json, spx_close_json):
     tickers   = json.loads(tickers_json)
-    spx_close = pd.read_json(spx_close_json, typ="series")
+    spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
     rows = []
     for tk in tickers:
         df = fetch_weekly(tk)
