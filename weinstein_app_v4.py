@@ -1224,43 +1224,103 @@ with tab_dashboard:
                 st.markdown("---")
 
                 # ── PERFORMANCE CHART (full width) ──
-                st.markdown("#### Performance")
-                if True:
-                    chart_col = st  # full width
-                    dist_col  = None
+                perf_hdr, perf_toggle = st.columns([3, 2])
+                with perf_hdr:
+                    st.markdown("#### Performance")
+                with perf_toggle:
+                    period_options = ["1W", "1M", "YTD", "1Y", "5Y", "Max"]
+                    chart_period = st.radio(
+                        "Period", period_options,
+                        index=3, horizontal=True,
+                        label_visibility="collapsed"
+                    )
 
-                # Performance chart — full width
-                if not hist.empty:
-                    base_val = 0
-                    for tk in tickers:
-                        sh, ac = cost_map.get(tk, (1, 0))
-                        if ac > 0: base_val += ac * sh
+                # Fetch extended history if needed
+                period_years = {"1W": 0.1, "1M": 0.2, "YTD": 1,
+                                "1Y": 1, "5Y": 5, "Max": 10}
+                fetch_years  = period_years.get(chart_period, 1)
+
+                @st.cache_data(ttl=3600)
+                def get_chart_history(tickers_json, years):
+                    tks = json.loads(tickers_json)
+                    end   = datetime.today()
+                    start = end - timedelta(days=int(years * 365))
+                    try:
+                        raw = yf.download(tks, start=start, end=end,
+                                          auto_adjust=True, progress=False)["Close"]
+                        if isinstance(raw, pd.Series):
+                            raw = raw.to_frame(tks[0])
+                        return raw.ffill()
+                    except:
+                        return pd.DataFrame()
+
+                chart_hist = get_chart_history(json.dumps(tickers), fetch_years)
+
+                if not chart_hist.empty:
+                    base_val = sum(
+                        cost_map.get(tk, (1, 0))[0] * cost_map.get(tk, (1, 0))[1]
+                        for tk in tickers
+                        if cost_map.get(tk, (1, 0))[1] > 0
+                    )
                     if base_val > 0:
-                        daily_vals = pd.Series(0.0, index=hist.index)
+                        # Filter to selected period
+                        now = pd.Timestamp.today()
+                        if chart_period == "1W":
+                            cut = now - pd.Timedelta(weeks=1)
+                        elif chart_period == "1M":
+                            cut = now - pd.DateOffset(months=1)
+                        elif chart_period == "YTD":
+                            cut = pd.Timestamp(now.year, 1, 1)
+                        elif chart_period == "1Y":
+                            cut = now - pd.DateOffset(years=1)
+                        elif chart_period == "5Y":
+                            cut = now - pd.DateOffset(years=5)
+                        else:
+                            cut = chart_hist.index[0]
+
+                        h = chart_hist[chart_hist.index >= cut]
+                        if h.empty: h = chart_hist
+
+                        daily_vals = pd.Series(0.0, index=h.index)
                         for tk in tickers:
-                            if tk not in hist.columns: continue
+                            if tk not in h.columns: continue
                             sh, ac = cost_map.get(tk, (1, 0))
                             if ac > 0:
-                                daily_vals += hist[tk].ffill() * sh
-                        pct_series = (daily_vals / base_val - 1) * 100
+                                daily_vals += h[tk].ffill() * sh
+
+                        # Normalise to start of selected period
+                        start_val = float(daily_vals.iloc[0])
+                        if start_val > 0:
+                            pct_series = (daily_vals / start_val - 1) * 100
+                        else:
+                            pct_series = (daily_vals / base_val - 1) * 100
+
+                        # Colour: green if ended positive, red if negative
+                        end_val = float(pct_series.iloc[-1])
+                        line_color = "#4ade80" if end_val >= 0 else "#f87171"
+                        fill_color = "rgba(74,222,128,0.07)" if end_val >= 0 else "rgba(248,113,113,0.07)"
+
                         fig = go.Figure()
                         fig.add_trace(go.Scatter(
                             x=pct_series.index, y=pct_series.values,
                             mode="lines", name="Portfolio",
-                            line=dict(color="#60a5fa", width=2.5),
-                            fill="tozeroy", fillcolor="rgba(96,165,250,0.07)"
+                            line=dict(color=line_color, width=2.5),
+                            fill="tozeroy", fillcolor=fill_color,
+                            hovertemplate="%{x|%b %d %Y}<br><b>%{y:+.2f}%</b><extra></extra>",
                         ))
                         fig.add_hline(y=0, line_dash="dash",
-                                      line_color="rgba(200,200,200,0.25)", line_width=1)
+                                      line_color="rgba(200,200,200,0.2)", line_width=1)
                         fig.update_layout(
-                            height=320, margin=dict(l=0,r=0,t=10,b=0),
+                            height=340, margin=dict(l=0, r=0, t=10, b=0),
                             paper_bgcolor="rgba(0,0,0,0)",
                             plot_bgcolor="rgba(0,0,0,0)",
                             font=dict(color=TEXT, family="Syne"),
-                            xaxis=dict(showgrid=False, color=SUBTEXT, tickfont=dict(size=11)),
+                            xaxis=dict(showgrid=False, color=SUBTEXT,
+                                       tickfont=dict(size=11), zeroline=False),
                             yaxis=dict(showgrid=True, gridcolor=BORDER,
                                        tickformat="+.1f", ticksuffix="%",
-                                       color=SUBTEXT, tickfont=dict(size=11)),
+                                       color=SUBTEXT, tickfont=dict(size=11),
+                                       zeroline=False),
                             legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT)),
                             hovermode="x unified",
                         )
