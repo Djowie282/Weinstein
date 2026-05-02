@@ -1223,140 +1223,187 @@ with tab_dashboard:
 
                 st.markdown("---")
 
-                # ── PERFORMANCE CHART (full width) ──
-                perf_hdr, perf_toggle = st.columns([3, 2])
-                with perf_hdr:
-                    st.markdown("#### Performance")
-                with perf_toggle:
+                # ── CONTROLS ROW ──
+                ctrl1, ctrl2, ctrl3 = st.columns([3, 2, 1])
+                with ctrl1:
                     period_options = ["1W", "1M", "YTD", "1Y", "5Y", "Max"]
-                    chart_period = st.radio(
-                        "Period", period_options,
-                        index=3, horizontal=True,
-                        label_visibility="collapsed"
-                    )
+                    chart_period = st.radio("Period", period_options, index=3,
+                                            horizontal=True, label_visibility="collapsed")
+                with ctrl2:
+                    compare_spx = st.checkbox("Compare vs S&P 500", value=False)
+                with ctrl3:
+                    hide_values = st.toggle("Hide $", value=False)
 
-                # Fetch extended history if needed
-                period_years = {"1W": 0.1, "1M": 0.2, "YTD": 1,
-                                "1Y": 1, "5Y": 5, "Max": 10}
-                fetch_years  = period_years.get(chart_period, 1)
+                # ── CHART + DISTRIBUTION SIDE BY SIDE ──
+                chart_col, dist_col = st.columns([3, 2])
 
                 @st.cache_data(ttl=3600)
                 def get_chart_history(tickers_json, years):
                     tks = json.loads(tickers_json)
+                    all_tks = list(set(tks + ["SPY"]))
                     end   = datetime.today()
                     start = end - timedelta(days=int(years * 365))
                     try:
-                        raw = yf.download(tks, start=start, end=end,
+                        raw = yf.download(all_tks, start=start, end=end,
                                           auto_adjust=True, progress=False)["Close"]
                         if isinstance(raw, pd.Series):
-                            raw = raw.to_frame(tks[0])
+                            raw = raw.to_frame(all_tks[0])
                         return raw.ffill()
                     except:
                         return pd.DataFrame()
 
-                chart_hist = get_chart_history(json.dumps(tickers), fetch_years)
+                period_years = {"1W": 0.1, "1M": 0.2, "YTD": 1,
+                                "1Y": 1, "5Y": 5, "Max": 10}
+                chart_hist = get_chart_history(json.dumps(tickers),
+                                               period_years.get(chart_period, 1))
 
-                if not chart_hist.empty:
-                    base_val = sum(
-                        cost_map.get(tk, (1, 0))[0] * cost_map.get(tk, (1, 0))[1]
-                        for tk in tickers
-                        if cost_map.get(tk, (1, 0))[1] > 0
-                    )
-                    if base_val > 0:
-                        # Filter to selected period
-                        now = pd.Timestamp.today()
-                        if chart_period == "1W":
-                            cut = now - pd.Timedelta(weeks=1)
-                        elif chart_period == "1M":
-                            cut = now - pd.DateOffset(months=1)
-                        elif chart_period == "YTD":
-                            cut = pd.Timestamp(now.year, 1, 1)
-                        elif chart_period == "1Y":
-                            cut = now - pd.DateOffset(years=1)
-                        elif chart_period == "5Y":
-                            cut = now - pd.DateOffset(years=5)
-                        else:
-                            cut = chart_hist.index[0]
-
-                        h = chart_hist[chart_hist.index >= cut]
-                        if h.empty: h = chart_hist
-
-                        daily_vals = pd.Series(0.0, index=h.index)
-                        for tk in tickers:
-                            if tk not in h.columns: continue
-                            sh, ac = cost_map.get(tk, (1, 0))
-                            if ac > 0:
-                                daily_vals += h[tk].ffill() * sh
-
-                        # Normalise to start of selected period
-                        start_val = float(daily_vals.iloc[0])
-                        if start_val > 0:
-                            pct_series = (daily_vals / start_val - 1) * 100
-                        else:
-                            pct_series = (daily_vals / base_val - 1) * 100
-
-                        # Colour: green if ended positive, red if negative
-                        end_val = float(pct_series.iloc[-1])
-                        line_color = "#4ade80" if end_val >= 0 else "#f87171"
-                        fill_color = "rgba(74,222,128,0.07)" if end_val >= 0 else "rgba(248,113,113,0.07)"
-
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(
-                            x=pct_series.index, y=pct_series.values,
-                            mode="lines", name="Portfolio",
-                            line=dict(color=line_color, width=2.5),
-                            fill="tozeroy", fillcolor=fill_color,
-                            hovertemplate="%{x|%b %d %Y}<br><b>%{y:+.2f}%</b><extra></extra>",
-                        ))
-                        fig.add_hline(y=0, line_dash="dash",
-                                      line_color="rgba(200,200,200,0.2)", line_width=1)
-                        fig.update_layout(
-                            height=340, margin=dict(l=0, r=0, t=10, b=0),
-                            paper_bgcolor="rgba(0,0,0,0)",
-                            plot_bgcolor="rgba(0,0,0,0)",
-                            font=dict(color=TEXT, family="Syne"),
-                            xaxis=dict(showgrid=False, color=SUBTEXT,
-                                       tickfont=dict(size=11), zeroline=False),
-                            yaxis=dict(showgrid=True, gridcolor=BORDER,
-                                       tickformat="+.1f", ticksuffix="%",
-                                       color=SUBTEXT, tickfont=dict(size=11),
-                                       zeroline=False),
-                            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT)),
-                            hovermode="x unified",
+                with chart_col:
+                    st.markdown("#### Performance")
+                    if not chart_hist.empty:
+                        base_val = sum(
+                            cost_map.get(tk, (1,0))[0] * cost_map.get(tk, (1,0))[1]
+                            for tk in tickers if cost_map.get(tk,(1,0))[1] > 0
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        if base_val > 0:
+                            now = pd.Timestamp.today()
+                            if chart_period == "1W":   cut = now - pd.Timedelta(weeks=1)
+                            elif chart_period == "1M": cut = now - pd.DateOffset(months=1)
+                            elif chart_period == "YTD":cut = pd.Timestamp(now.year,1,1)
+                            elif chart_period == "1Y": cut = now - pd.DateOffset(years=1)
+                            elif chart_period == "5Y": cut = now - pd.DateOffset(years=5)
+                            else:                      cut = chart_hist.index[0]
+
+                            h = chart_hist[chart_hist.index >= cut]
+                            if h.empty: h = chart_hist
+
+                            # Portfolio line
+                            daily_vals = pd.Series(0.0, index=h.index)
+                            for tk in tickers:
+                                if tk not in h.columns: continue
+                                sh, ac = cost_map.get(tk, (1, 0))
+                                if ac > 0:
+                                    daily_vals += h[tk].ffill() * sh
+
+                            sv = float(daily_vals.iloc[0])
+                            pct_series = (daily_vals / sv - 1) * 100 if sv > 0 else daily_vals * 0
+                            # Smooth with rolling avg (window scales with data length)
+                            win = max(1, len(pct_series) // 30)
+                            pct_smooth = pct_series.rolling(win, min_periods=1, center=True).mean()
+
+                            end_val    = float(pct_smooth.iloc[-1])
+                            line_color = "#4ade80" if end_val >= 0 else "#f87171"
+                            fill_color = "rgba(74,222,128,0.07)" if end_val >= 0 else "rgba(248,113,113,0.07)"
+
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(
+                                x=pct_smooth.index, y=pct_smooth.values,
+                                mode="lines", name="Portfolio",
+                                line=dict(color=line_color, width=2.5, shape="spline", smoothing=0.8),
+                                fill="tozeroy", fillcolor=fill_color,
+                                hovertemplate="%{x|%b %d %Y}<br><b>%{y:+.2f}%</b><extra></extra>",
+                            ))
+
+                            # SPX comparison
+                            if compare_spx and "SPY" in h.columns:
+                                spy = h["SPY"].ffill()
+                                spy_pct = (spy / float(spy.iloc[0]) - 1) * 100
+                                spy_smooth = spy_pct.rolling(win, min_periods=1, center=True).mean()
+                                fig.add_trace(go.Scatter(
+                                    x=spy_smooth.index, y=spy_smooth.values,
+                                    mode="lines", name="S&P 500",
+                                    line=dict(color="#94a3b8", width=1.5,
+                                              shape="spline", smoothing=0.8, dash="dot"),
+                                    hovertemplate="%{x|%b %d %Y}<br>SPX <b>%{y:+.2f}%</b><extra></extra>",
+                                ))
+
+                            fig.add_hline(y=0, line_dash="dash",
+                                          line_color="rgba(200,200,200,0.2)", line_width=1)
+
+                            yaxis_cfg = dict(
+                                showgrid=True, gridcolor=BORDER, zeroline=False,
+                                tickformat="+.1f", ticksuffix="%",
+                                color=SUBTEXT, tickfont=dict(size=11),
+                            )
+                            if hide_values:
+                                yaxis_cfg["tickformat"] = ""
+                                yaxis_cfg["showticklabels"] = False
+
+                            fig.update_layout(
+                                height=300, margin=dict(l=0,r=0,t=10,b=0),
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                font=dict(color=TEXT, family="Syne"),
+                                xaxis=dict(showgrid=False, color=SUBTEXT,
+                                           tickfont=dict(size=10), zeroline=False),
+                                yaxis=yaxis_cfg,
+                                legend=dict(bgcolor="rgba(0,0,0,0)",
+                                            font=dict(color=TEXT, size=11),
+                                            orientation="h", yanchor="bottom",
+                                            y=1.02, xanchor="right", x=1),
+                                hovermode="x unified",
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("Add avg costs per position to see the performance chart.")
                     else:
-                        st.info("Add avg costs per position to see the performance chart.")
-                else:
-                    st.caption("Performance history unavailable.")
+                        st.caption("Performance history unavailable.")
 
-                st.markdown("---")
+                # ── DISTRIBUTION (compact, next to chart) ──
+                with dist_col:
+                    dist_hdr, dist_toggle = st.columns([2, 1])
+                    with dist_hdr:
+                        st.markdown("#### Distribution")
+                    with dist_toggle:
+                        dist_mode = st.radio("Show", ["P&L", "Today"],
+                                             horizontal=True, label_visibility="collapsed")
 
-                # Distribution treemap — full width
-                st.markdown("#### Distribution")
-                if position_data:
-                    tree_labels = [pd_["r"]["ticker"] for pd_ in position_data if pd_["val"] > 0]
-                    tree_values = [pd_["val"] for pd_ in position_data if pd_["val"] > 0]
-                    tree_pnl    = [pd_["pnl_pct"] for pd_ in position_data if pd_["val"] > 0]
-                    tree_colors = [p if p is not None else 0 for p in tree_pnl]
-                    fig2 = go.Figure(go.Treemap(
-                        labels=tree_labels,
-                        parents=[""] * len(tree_labels),
-                        values=tree_values,
-                        customdata=[[f"{p:+.1f}%" if p is not None else "–"] for p in tree_pnl],
-                        texttemplate="<b>%{label}</b><br>%{customdata[0]}",
-                        marker=dict(
-                            colors=tree_colors,
-                            colorscale=[[0,"#7f1d1d"],[0.45,"#1e2130"],[1,"#14532d"]],
-                            cmid=0, showscale=False,
-                        ),
-                    ))
-                    fig2.update_layout(
-                        height=260, margin=dict(l=0,r=0,t=0,b=0),
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        font=dict(color="white", family="Syne", size=13),
-                    )
-                    st.plotly_chart(fig2, use_container_width=True)
+                    if position_data:
+                        tree_labels = [pd_["r"]["ticker"] for pd_ in position_data if pd_["val"] > 0]
+                        tree_values = [pd_["val"] for pd_ in position_data if pd_["val"] > 0]
+
+                        if dist_mode == "Today":
+                            # Daily % change from yfinance fast_info
+                            today_changes = []
+                            for pd_ in position_data:
+                                if pd_["val"] <= 0: continue
+                                tk = pd_["r"]["ticker"]
+                                try:
+                                    fi = yf.Ticker(tk).fast_info
+                                    prev = getattr(fi, "previous_close", None)
+                                    last = getattr(fi, "last_price", None)
+                                    if prev and last and prev > 0:
+                                        today_changes.append((last/prev - 1)*100)
+                                    else:
+                                        today_changes.append(0.0)
+                                except:
+                                    today_changes.append(0.0)
+                            tree_colors   = today_changes
+                            custom_labels = [f"{c:+.2f}%" for c in today_changes]
+                        else:
+                            tree_pnl    = [pd_["pnl_pct"] for pd_ in position_data if pd_["val"] > 0]
+                            tree_colors = [p if p is not None else 0 for p in tree_pnl]
+                            custom_labels = [f"{p:+.1f}%" if p is not None else "–" for p in tree_pnl]
+                            if hide_values:
+                                custom_labels = ["" for _ in custom_labels]
+
+                        fig2 = go.Figure(go.Treemap(
+                            labels=tree_labels,
+                            parents=[""] * len(tree_labels),
+                            values=tree_values,
+                            customdata=[[c] for c in custom_labels],
+                            texttemplate="<b>%{label}</b><br>%{customdata[0]}",
+                            marker=dict(
+                                colors=tree_colors,
+                                colorscale=[[0,"#7f1d1d"],[0.45,"#1e2130"],[1,"#14532d"]],
+                                cmid=0, showscale=False,
+                            ),
+                        ))
+                        fig2.update_layout(
+                            height=300, margin=dict(l=0,r=0,t=0,b=0),
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color="white", family="Syne", size=12),
+                        )
+                        st.plotly_chart(fig2, use_container_width=True)
 
                 st.markdown("---")
 
