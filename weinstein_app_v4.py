@@ -1017,9 +1017,12 @@ def get_portfolio_history(tickers_json, period="1y"):
     start = end - timedelta(days=365)
     try:
         raw = yf.download(tickers, start=start, end=end,
-                          auto_adjust=True, progress=False)["Close"]
+                          auto_adjust=False, progress=False)["Close"]
         if isinstance(raw, pd.Series):
             raw = raw.to_frame(tickers[0])
+        # Drop incomplete today bar (market still open)
+        if len(raw) > 1 and raw.index[-1].date() == datetime.today().date():
+            raw = raw.iloc[:-1]
         return raw.ffill()
     except:
         return pd.DataFrame()
@@ -1245,9 +1248,12 @@ with tab_dashboard:
                     start = end - timedelta(days=int(years * 365))
                     try:
                         raw = yf.download(all_tks, start=start, end=end,
-                                          auto_adjust=True, progress=False)["Close"]
+                                          auto_adjust=False, progress=False)["Close"]
                         if isinstance(raw, pd.Series):
                             raw = raw.to_frame(all_tks[0])
+                        # Drop today if market still open
+                        if len(raw) > 1:
+                            raw = raw.iloc[:-1] if raw.index[-1].date() == datetime.today().date() else raw
                         return raw.ffill()
                     except:
                         return pd.DataFrame()
@@ -1311,7 +1317,7 @@ with tab_dashboard:
                                 fig.add_trace(go.Scatter(
                                     x=spy_smooth.index, y=spy_smooth.values,
                                     mode="lines", name="S&P 500",
-                                    line=dict(color="#94a3b8", width=1.5,
+                                    line=dict(color="#475569", width=1.8,
                                               shape="spline", smoothing=0.8, dash="dot"),
                                     hovertemplate="%{x|%b %d %Y}<br>SPX <b>%{y:+.2f}%</b><extra></extra>",
                                 ))
@@ -1362,17 +1368,18 @@ with tab_dashboard:
                         tree_values = [pd_["val"] for pd_ in position_data if pd_["val"] > 0]
 
                         if dist_mode == "Today":
-                            # Daily % change from yfinance fast_info
+                            # Use fast_info for live last_price vs previous_close
+                            # This matches TradingView / broker daily % exactly
                             today_changes = []
                             for pd_ in position_data:
                                 if pd_["val"] <= 0: continue
                                 tk = pd_["r"]["ticker"]
                                 try:
-                                    fi = yf.Ticker(tk).fast_info
+                                    fi   = yf.Ticker(tk).fast_info
                                     prev = getattr(fi, "previous_close", None)
                                     last = getattr(fi, "last_price", None)
-                                    if prev and last and prev > 0:
-                                        today_changes.append((last/prev - 1)*100)
+                                    if prev and last and float(prev) > 0:
+                                        today_changes.append(round((float(last)/float(prev) - 1)*100, 2))
                                     else:
                                         today_changes.append(0.0)
                                 except:
@@ -1431,12 +1438,13 @@ with tab_dashboard:
                     else:                    s_color = BLUE;   s_dot = "🔵"
 
                     pnl_html = ""
-                    if pnl is not None:
+                    if pnl is not None and not hide_values:
                         pc = GREEN if pnl >= 0 else RED
                         sign = "+" if pnl >= 0 else ""
                         pnl_html = f'<span style="color:{pc};font-weight:700">{sign}${pnl:,.0f} ({pnl_pct:+.1f}%)</span>'
 
                     sig = sig_icon(r)
+                    price_str = "———" if hide_values else f"${r['price'] or 0:,.2f}"
 
                     with cols3[i % 3]:
                         st.markdown(f"""
@@ -1446,8 +1454,8 @@ with tab_dashboard:
                             <span style="font-size:1.1rem;font-weight:800">{s_dot} {tk}</span>
                             <span style="color:{SUBTEXT};font-size:0.8rem">{sh:.0f} sh</span>
                           </div>
-                          <div style="font-size:1.4rem;font-weight:700;margin-bottom:2px">${r['price'] or 0:,.2f}</div>
-                          <div style="font-size:0.82rem;margin-bottom:8px">{pnl_html if pnl_html else f'<span style="color:{SUBTEXT}">No cost basis</span>'}</div>
+                          <div style="font-size:1.4rem;font-weight:700;margin-bottom:2px">{price_str}</div>
+                          <div style="font-size:0.82rem;margin-bottom:8px">{pnl_html if pnl_html else ""}</div>
                           <div style="font-size:0.78rem;color:{SUBTEXT};line-height:1.6">
                             <span style="color:{s_color}">{stage}</span> · Score {r['score']}/5<br>
                             RS {fmt(r['rs'],'',1)} · {fmt(r['pct_above'],'%',1)} vs SMA<br>
