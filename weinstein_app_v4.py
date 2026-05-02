@@ -1079,10 +1079,29 @@ with tab_dashboard:
             new_note = col_d.text_input("Notes")
             if st.button("Add position"):
                 if new_tk:
-                    portfolio.append({"ticker": new_tk, "shares": new_sh,
-                                      "avg_cost": new_cost, "notes": new_note})
+                    # Check if ticker already exists — if so, merge (weighted avg cost)
+                    existing = next((p for p in portfolio if p["ticker"] == new_tk), None)
+                    if existing:
+                        old_sh   = existing["shares"]
+                        old_cost = existing["avg_cost"]
+                        new_total_sh = old_sh + new_sh
+                        if new_cost > 0 and old_cost > 0:
+                            # Weighted average cost
+                            new_avg = (old_sh * old_cost + new_sh * new_cost) / new_total_sh
+                        elif new_cost > 0:
+                            new_avg = new_cost
+                        else:
+                            new_avg = old_cost
+                        existing["shares"]   = new_total_sh
+                        existing["avg_cost"] = round(new_avg, 4)
+                        if new_note:
+                            existing["notes"] = new_note
+                        st.success(f"Updated {new_tk}: {new_total_sh:.1f} sh @ ${new_avg:.2f} avg")
+                    else:
+                        portfolio.append({"ticker": new_tk, "shares": new_sh,
+                                          "avg_cost": new_cost, "notes": new_note})
+                        st.success(f"Added {new_tk}")
                     st.session_state.portfolios[user] = portfolio
-                    st.success(f"Added {new_tk}")
                     st.rerun()
             if portfolio:
                 for i, pos in enumerate(portfolio):
@@ -1169,7 +1188,7 @@ with tab_dashboard:
                                 if tk not in hist.columns: continue
                                 sh, ac = cost_map.get(tk, (1, 0))
                                 if ac > 0:
-                                    daily_vals += hist[tk].fillna(method="ffill") * sh
+                                    daily_vals += hist[tk].ffill() * sh
                             pct_series = (daily_vals / base_val - 1) * 100
                             spx_hist = hist.get("SPY")
                             fig = go.Figure()
