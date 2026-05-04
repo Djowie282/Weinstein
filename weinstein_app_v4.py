@@ -183,28 +183,188 @@ SECTOR_STOCKS = {
 }
 
 # Pure AI/tech universe (ETFs + stocks) – shown as separate category
-AI_UNIVERSE = {
-    # AI Infrastructure ETFs
-    "BOTZ": "AI & Robotics ETF", "AIQ": "AI ETF", "ROBO": "Robotics ETF",
-    "ARKQ": "ARK Autonomous", "THNQ": "AI ETF (Robo Global)", "KOMP": "S&P Kensho",
-    # Semiconductors (AI angle)
-    "NVDA": "Nvidia", "AMD": "AMD", "AVGO": "Broadcom", "AMAT": "Applied Materials",
-    "ASML": "ASML", "KLAC": "KLA Corp", "LRCX": "Lam Research", "MRVL": "Marvell",
-    "MU": "Micron", "ON": "ON Semiconductor", "SMCI": "Super Micro",
-    "ARM": "ARM Holdings", "CRWV": "CoreWeave",
-    # AI Software / Cloud
-    "MSFT": "Microsoft", "GOOGL": "Alphabet", "META": "Meta", "CRM": "Salesforce",
-    "NOW": "ServiceNow", "PLTR": "Palantir", "SNOW": "Snowflake",
-    "DDOG": "Datadog", "MDB": "MongoDB", "NET": "Cloudflare",
-    "ZS": "Zscaler", "CRWD": "CrowdStrike", "PANW": "Palo Alto",
-    "ORCL": "Oracle", "IBM": "IBM",
-    # Robotics / Agentic
-    "PATH": "UiPath", "AMBA": "Ambarella", "IONQ": "IonQ",
-    "QUBT": "Quantum Computing", "RGTI": "Rigetti",
-    # AI ETF broader
-    "SMH": "VanEck Semiconductors ETF", "SOXX": "iShares Semiconductor ETF",
-    "XLK": "Technology Sector ETF", "QQQ": "Nasdaq 100 ETF",
+# ── Finviz-style industry categories with representative stocks ──
+# Grouped by Finviz sector for easy navigation
+FINVIZ_INDUSTRIES = {
+    # ── TECHNOLOGY ──
+    "Semiconductors":                ["NVDA","AMD","AVGO","QCOM","TXN","MCHP","ADI","AMAT","LRCX","KLAC","ASML","ARM","MU","SMCI","ON","MRVL","INTC","NXPI","STM","SWKS"],
+    "Semiconductor Equipment":       ["AMAT","LRCX","KLAC","ASML","ONTO","UCTT","ICHR","ACLS","AMKR","COHU"],
+    "Software - Application":        ["CRM","NOW","ADBE","INTU","CDNS","SNPS","ANSS","PTC","MANH","PCTY","PAYC","DOCU","ZI","SMAR","APPF"],
+    "Software - Infrastructure":     ["MSFT","ORCL","PLTR","MDB","DDOG","SNOW","NET","ZS","CRWD","PANW","FTNT","OKTA","CYBR","S","TENB"],
+    "Computer Hardware":             ["AAPL","HPQ","HPE","DELL","NTAP","PSTG","WDC","STX","NTNX","PEGA"],
+    "Information Technology Services":["ACN","IBM","INFY","WIT","CTSH","DXC","EPAM","GLOB","EXLS","KFRC"],
+    "Internet Content & Information": ["GOOGL","META","PINS","SNAP","RBLX","MTCH","IAC","ZD","CARG","TRUE"],
+    "Electronic Components":         ["TE","APH","GLW","FLEX","PLXS","BHE","CTS","VICR","NTGR","TTMI"],
+    "Electronics & Computer Distribution":["AVGO","ARW","AVT","SNX","SCSC","NSIT","PC","AMSWA"],
+    "Scientific & Technical Instruments":["TMO","DHR","A","WAT","METTLER","FTV","ROPER","BMI","NOVT","OSIS","MKS"],
+    "Communication Equipment":       ["CSCO","JNPR","ANET","CIEN","VIAV","CALX","ALOHA","INFN","COMM","SATS"],
+
+    # ── HEALTHCARE ──
+    "Drug Manufacturers - Major":    ["LLY","JNJ","MRK","ABBV","PFE","AMGN","BMY","GILD","BIIB","REGN","VRTX","MRNA","AZN","NVO","RHHBY"],
+    "Drug Manufacturers - Specialty":["JAZZ","INVA","SUPN","PRGO","MNKD","HZNP","IMVT","ARWR","ALNY","IONS"],
+    "Biotechnology":                 ["MRNA","BIIB","REGN","VRTX","ALNY","BMRN","EXEL","ROIV","KRTX","RCKT","ARWR","IONS","SRPT","FOLD","PTGX"],
+    "Medical Devices":               ["ISRG","MDT","BSX","EW","SYK","BDX","ZBH","HOLX","NVST","INSP","NARI","SWAV","IRTC","AXNX","NVRO"],
+    "Medical Instruments & Supplies":["ABT","BAX","BDX","DXCM","PODD","TNDM","ITGR","NVCR","MMSI","ICUI"],
+    "Health Information Services":   ["UNH","CI","CVS","HUM","MOH","CNC","ELV","HCA","THC","UHS","ACAD","PGNY"],
+    "Diagnostics & Research":        ["TMO","DHR","IQV","ILMN","A","QGEN","EXAS","NEO","GH","NTRA","FLGT","OCDX"],
+    "Healthcare Plans":              ["UNH","ELV","CI","HUM","MOH","CNC","OSCR","CLOV"],
+
+    # ── FINANCIALS ──
+    "Banks - Major":                 ["JPM","BAC","WFC","C","GS","MS","USB","PNC","TFC","COF","KEY","RF","FITB","HBAN","CFG"],
+    "Banks - Regional":              ["ZION","MTB","BOKF","EWBC","FFIN","IBOC","CVBF","WAFD","HTLF","BANR","SFNC","RBCAA"],
+    "Asset Management":              ["BLK","APO","KKR","BX","CG","ARES","BAM","OWL","STEP","BLUE"],
+    "Insurance - Life":              ["MET","PRU","AFL","LNC","UNM","GL","FG","NWLI","PFG","COOP"],
+    "Insurance - Property & Casualty":["PGR","ALL","TRV","CB","HIG","MKL","CINF","WRB","RLI","ERIE"],
+    "Financial Data & Stock Exchanges":["SPGI","MCO","CME","ICE","MSCI","NDAQ","TW","CBOE","MKTX","EVR"],
+    "Credit Services":               ["V","MA","AXP","COF","DFS","SYF","ALLY","OMF","WEX","AFRM","UPST","LC"],
+    "Capital Markets":               ["GS","MS","SCHW","RJF","SF","LPLA","VIRT","MKTX","PIPR","HLI"],
+    "Insurance - Specialty":         ["AON","MMC","WTW","AJG","BRO","RYAN","ERIE","PLMR","KINGSWAY"],
+    "Mortgage Finance":              ["FNMA","FMCC","RKT","UWMC","PFSI","GHLD","HMC","LDI","WSFS"],
+
+    # ── CONSUMER DISCRETIONARY ──
+    "Auto Manufacturers":            ["TSLA","GM","F","RIVN","LCID","STLA","TM","HMC","NIO","LI","XPEV","MBLY"],
+    "Auto Parts":                    ["APTV","BWA","ALV","GT","LEA","MGA","GNTX","MODV","FOX","DORMAN","MPAA"],
+    "Specialty Retail":              ["HD","LOW","ORLY","AZO","AAP","TSCO","WSM","RH","BBWI","URBN","ANF","AEO"],
+    "Internet Retail":               ["AMZN","BKNG","EXPE","ABNB","W","ETSY","EBAY","CHWY","OLLI","VTRS","WISH"],
+    "Restaurants":                   ["MCD","SBUX","CMG","YUM","QSR","DPZ","WING","TXRH","DRI","JACK","SHAK","CAVA"],
+    "Apparel Retail":                ["NKE","LULU","DECK","ONON","CROX","SKX","VFC","HBI","UA","PVH","G-III"],
+    "Apparel Manufacturing":         ["NKE","VFC","HBI","UA","PVH","RL","GOOS","MNST","HARL","DBRN"],
+    "Home Improvement Retail":       ["HD","LOW","WSM","RH","ARHS","HVBT","BCPC","TILE","FBHS","MASCO"],
+    "Furnishings & Fixtures":        ["WSM","RH","ETSY","HNI","KNL","SCS","LESL","FLXS","UFI","DXPE"],
+    "Leisure":                       ["MAR","HLT","H","IHG","WH","WYNDM","EXPE","BKNG","ABNB","RCL","CCL","NCLH","LVS","MGM","WYNN","CZR"],
+    "Gambling":                      ["LVS","MGM","WYNN","CZR","BYD","PENN","DKNG","FLUT","RSI","BALY"],
+    "Travel Services":               ["BKNG","EXPE","ABNB","TRIP","VTRS","TVTX","UAL","DAL","AAL","JBLU","LUV","ULCC"],
+
+    # ── CONSUMER STAPLES ──
+    "Discount Stores":               ["WMT","COST","TGT","DG","DLTR","BIG","FIVE","PSMT","OLLI"],
+    "Household & Personal Products": ["PG","CL","CHD","KMB","ENR","SPB","COTY","ELF","HIMS","KENVUE","NUS"],
+    "Beverages - Non-Alcoholic":     ["KO","PEP","MNST","FIZZ","COKE","NOS","CELH","REED","PRMW"],
+    "Beverages - Alcoholic":         ["STZ","BUD","TAP","SAM","ABEV","DEO","BF-B","MGPI","EAST","CASK"],
+    "Beverages - Brewers":           ["SAM","TAP","BUD","ABEV","CRAFT","BREW","BEVE"],
+    "Food Distribution":             ["SYY","USFD","PFGC","CHEF","CASY","ARMK","JACK","DINE","FAT"],
+    "Farm Products":                 ["ADM","BG","INGR","CALM","SMFG","SAFM","VITL","TWNK","JJSF","LWAY"],
+    "Packaged Foods":                ["MDLZ","GIS","K","CPB","SJM","CAG","HRL","MKC","TSCO","POST","LANC","SLAB"],
+    "Tobacco":                       ["PM","MO","BTI","VGR","SWMA","TPB","XXII"],
+    "Confectioners":                 ["HSY","TR","RMCF","CACAO","SOUR","KFRC"],
+    "Grocery Stores":                ["KR","ACI","WINN","VLGEA","CASY","IMKTA","NGVC","SPTN"],
+
+    # ── ENERGY ──
+    "Oil & Gas E&P":                 ["XOM","CVX","COP","EOG","OXY","DVN","FANG","MRO","APA","AR","RRC","EQT","CNX","SM","MTDR","CTRA","VTLE","CHK"],
+    "Oil & Gas Integrated":          ["XOM","CVX","BP","SHEL","TTE","E","EQNR","IMO","SU"],
+    "Oil & Gas Midstream":           ["WMB","OKE","KMI","EPD","ET","MPLX","PAA","TRGP","DT","HESM"],
+    "Oil & Gas Refining & Marketing":["MPC","VLO","PSX","PBF","DKL","DINO","PARR","CALUMET"],
+    "Oil & Gas Drilling":            ["HP","NBR","PD","PTEN","NR","OIS","WTTR","NINE","BAS","KLX"],
+    "Oil & Gas Equipment & Services":["SLB","HAL","BKR","NOV","FTI","WHD","NE","VAL","RIG","BORR","DO","NR"],
+    "Uranium":                       ["CCJ","UEC","UUUU","DNN","URG","EU","BQSSF","NXE","ENCUF","PALAF"],
+    "Coal":                          ["BTU","ARCH","CEIX","AMR","METC","HNRG","SXC","FELP","NACCO"],
+    "Renewable Utilities":           ["NEE","BEP","BEPC","FSLR","ENPH","RUN","NOVA","ARRY","CSIQ","SEDG"],
+
+    # ── INDUSTRIALS ──
+    "Aerospace & Defense":           ["LMT","RTX","NOC","GD","BA","HII","L3H","TDG","HEI","AXON","KTOS","RKLB","RDW","ASTS"],
+    "Airlines":                      ["UAL","DAL","AAL","LUV","JBLU","ALK","ULCC","HA","ATSG","SKYW"],
+    "Trucking":                      ["ODFL","SAIA","XPO","WERN","JBHT","KNX","ARCB","MRTN","HTLD","USX"],
+    "Railroads":                     ["UNP","CSX","NSC","CP","CN","WAB","GATX","RAIL","TRN","GBX"],
+    "Integrated Freight & Logistics":["FDX","UPS","XPO","GXO","CHRW","ECHO","HUBG","EXPD","FWRD","ATSG"],
+    "Engineering & Construction":    ["PWR","MTZ","MYR","PRIM","ROAD","GBCI","GVP","ARGAN","TPVG"],
+    "Farm & Heavy Construction Machinery":["DE","CAT","AGCO","CNHI","OSK","ACCO","LNN","TITN","MNTX"],
+    "Industrial Distribution":       ["GWW","FAST","MSC","AIT","GIC","SIC","DNOW","LAWS","RUSHA"],
+    "Business Equipment & Supplies": ["AOS","SNA","SWK","TTC","MTW","NVRI","KMT","SPXC","NWC","BRC"],
+    "Metal Fabrication":             ["NUE","STLD","CMC","RS","ATI","HWM","CRS","TKR","OSI","WOR"],
+    "Specialty Industrial Machinery":["EMR","ROK","ITW","IEX","ROP","FLS","GNRC","ESCO","MIDD","WTS"],
+    "Tools & Accessories":           ["SNA","SWK","KMT","WSO","NWC","BRC","ROLL","CPRT","BMBL","LPX"],
+
+    # ── MATERIALS ──
+    "Chemicals":                     ["LIN","APD","ECL","DD","EMN","RPM","IFF","ALB","FMC","CF","MOS","OLN","CC","TROX","HUN"],
+    "Specialty Chemicals":           ["ECL","RPM","IFF","ALB","FMC","AVNT","ASCMA","PLL","LTHM","SQM","CEMI"],
+    "Agricultural Inputs":           ["CTVA","MOS","CF","NTR","ANDE","ICL","KRNT","MBCN","LIQT"],
+    "Steel":                         ["NUE","STLD","CMC","CLF","X","MT","TS","ZEUS","USAP","GHM"],
+    "Aluminum":                      ["AA","CENX","KALU","MTAL","RYES","NACCO","SXCL","PLLA","ALUM"],
+    "Copper":                        ["FCX","SCCO","HBM","TECK","CS","CPER","CPPM","RIO","BHP"],
+    "Gold":                          ["NEM","GOLD","AEM","AGI","KGC","AU","EGO","IAG","PAAS","WPM","FNV","RGLD"],
+    "Silver":                        ["WPM","PAAS","MAG","AG","SSRM","HL","EXK","SILV","CDE","FSM"],
+    "Other Industrial Metals":       ["MP","LTHM","LAC","PLL","SQM","ALB","GFAI","NOVV","CLNE"],
+    "Building Materials":            ["SHW","VMC","MLM","EXP","LPX","UFPI","DOOR","NCI","BLDP","BLDR"],
+    "Paper & Paper Products":        ["IP","PKG","SON","SLGN","GPK","BERY","RANPAK","ATR","PHIBRO"],
+    "Lumber & Wood Production":      ["WY","PCH","RYN","PL","LPX","UFPI","UFP","BCC","WEYCO"],
+
+    # ── REAL ESTATE ──
+    "REIT - Industrial":             ["PLD","REXR","EGP","FR","LXP","STAG","ILPT","TRNO","COLD","GLP"],
+    "REIT - Retail":                 ["SPG","O","KIM","REG","FRT","SRC","EPRT","NNN","RPAI","SITC"],
+    "REIT - Residential":            ["EQR","AVB","MAA","ESS","CPT","NMD","INVH","AMH","UDR","IRT"],
+    "REIT - Office":                 ["BXP","VNO","SLG","HIW","CUZ","DEA","PGRE","ESRT","ALX","PDM"],
+    "REIT - Healthcare":             ["WELL","VTR","OHI","PEAK","HR","NHI","LTC","SBRA","CSH","GMRE"],
+    "REIT - Hotel & Motel":          ["HST","RHP","PK","APLE","CLDT","SHO","RLJ","XHR","INN","BHR"],
+    "REIT - Specialty":              ["AMT","CCI","SBAC","EQIX","DLR","CONE","QTS","IRM","LADR","SAFE"],
+    "REIT - Mortgage":               ["AGNC","NLY","STWD","BXMT","RC","GPMT","KREF","TWO","MFA","ARR"],
+    "Real Estate Services":          ["CBRE","JLL","CWK","RMAX","EXPI","DOUG","OPEN","COMP","HHC","FPH"],
+
+    # ── UTILITIES ──
+    "Utilities - Regulated Electric":["NEE","SO","DUK","AEP","XEL","EXC","ED","SRE","D","PEG","AEE","WEC","ETR","DTE","FE","ES","PPL","CMS","OGE","EVRG","LNT"],
+    "Utilities - Renewable":         ["NEE","BEP","BEPC","AES","CWEN","NOVA","ARRY","RUN","FSLR","ENPH","SEDG"],
+    "Utilities - Regulated Gas":     ["SRE","NI","ATO","ONE","SPOK","WEC","NW","SR","NJR","SWX","NFG","CPK"],
+    "Utilities - Regulated Water":   ["AWK","WTRG","MSEX","YORW","SJW","GWRS","ARTNA","CTWS","PESI"],
+    "Utilities - Diversified":       ["AES","D","ETR","EVRG","PNW","NWE","CLNE","AVA","IDACORP","UT"],
+    "Utilities - Independent Power": ["VST","CEG","NRG","AES","CWEN","CLNE","AMPE","GEN","MGEE","OTTA"],
+
+    # ── COMMUNICATION SERVICES ──
+    "Telecom Services":              ["T","VZ","TMUS","LUMN","USM","TDS","ATN","SHEN","CNSL","OOMA","NTLS"],
+    "Entertainment":                 ["DIS","NFLX","WBD","PARA","FOX","FOXA","LGF-A","AMC","CNK","IMAX","LYV","MSG","MSGE"],
+    "Publishing":                    ["NYT","GCI","MDP","NWSA","NWS","OMC","IPG","PRTS","QUAD","LSC"],
+    "Advertising Agencies":          ["OMC","IPG","PUBM","TTD","MGNI","IAS","DV","CRIT","TBLA","APPS"],
+
+    # ── ADDITIONAL HIGH-INTEREST ──
+    "Electronic Gaming & Multimedia":["ATVI","EA","TTWO","RBLX","U","PLTK","GRVY","DDI","GMBL","SKLZ"],
+    "Medical Distribution":          ["MCK","ABC","CAH","PDCO","HSIC","OMCL","NXRT","MDRX","HCSG","HWAY"],
+    "Staffing & Employment":         ["ADP","PAYX","MAN","KFY","KELYA","HHAX","RCMT","HCI","TBI","CDW"],
+    "Waste Management":              ["WM","RSG","CWST","SRCL","ARIS","CLH","ECOL","HCCI","GDYN","GFL"],
+
+    # ── MISSING FINVIZ CATEGORIES ──
+    "Luxury Goods":                  ["LVMUY","CPRI","TPR","RL","PVH","MOV","FOSL","COTY","ELF","RARE"],
+    "Grocery Stores":                ["KR","ACI","VLGEA","WINN","IMKTA","NGVC","SPTN","CASY","ALDI"],
+    "REIT - Diversified":            ["W","LAND","EPRT","FCPT","SRC","GTY","GOOD","PINE","GIPR","NLCP"],
+    "Insurance - Reinsurance":       ["RNR","ACGL","MKL","GLRE","PRNB","PRE","STRS","TPRE","TNL"],
+    "Real Estate - Development":     ["TOL","LEN","DHI","NVR","PHM","MDC","TMHC","MTH","LGIH","SKY"],
+    "Education & Training Services": ["CHGG","LRN","PRDO","STRA","GHC","LOPE","LAUR","ATGE","COUR","DUOL"],
+    "Conglomerates":                 ["BRK-B","GE","MMM","HON","ITW","EMR","SIC","CODI","SPLP","ACCO"],
+    "Banks - Diversified":           ["JPM","BAC","WFC","C","USB","PNC","TFC","COF","KEY","RF","FITB"],
+    "Consumer Electronics":          ["AAPL","SONO","HEAR","KOSS","VIZIO","GPRO","IRBT","VOXX","DXPE"],
+    "Shell Companies":               ["SPAC","PSTH","AJAX","BOWX","CCIV","ACAM","HCAC","IPOF","GSAH"],
+    "Thermal Coal":                  ["BTU","ARCH","CEIX","AMR","METC","HNRG","SXC","FELP","NACCO"],
+    "Coking Coal":                   ["AMR","ARCH","CEIX","METC","SXC","HCC","NACCO","FELP","ACI"],
+    "Residential Construction":      ["DHI","LEN","TOL","PHM","NVR","MDC","TMHC","MTH","LGIH","CVCO"],
+    "Other Precious Metals & Mining":["NEM","GOLD","AEM","AGI","MP","LTHM","LAC","PLL","SQM","UUUU"],
+    "Pollution & Treatment Controls":["CLH","RSG","WM","CWST","SRCL","ECOL","NVRI","HCCI","PESI","GFL"],
+    "Medical Care Facilities":       ["HCA","THC","UHS","CYH","SGRY","AMSF","AKAM","ADUS","ENSG","BKD"],
+    "Solar":                         ["FSLR","ENPH","RUN","NOVA","ARRY","CSIQ","SEDG","SPWR","MAXN","JKS"],
+    "Security & Protection Services":["AXON","MSA","ALLE","SWK","NSSC","NAPCO","IronNet","ARLO","IDEX","SSTI"],
+    "Broadcasting":                  ["NFLX","DIS","WBD","PARA","FOX","FOXA","AMC","LGF-A","IMAX","SGBX"],
+    "Packaging & Containers":        ["IP","PKG","SON","SLGN","GPK","BERY","RANPAK","ATR","CLGX","CCK"],
+    "Auto & Truck Dealerships":      ["AN","KMX","LAD","PAG","ABG","RUSHA","HLIT","SAH","CVNA","CAR"],
+    "Insurance - Diversified":       ["AIG","MET","PRU","AFL","LNC","GL","UNM","FG","NWLI","COOP"],
+    "Furnishings, Fixtures & Appliances":["WSM","RH","ETH","LESL","HNI","KNL","SCS","FLXS","UFI","DXPE"],
+    "Beverages - Wineries & Distilleries":["STZ","BATRA","MGPI","EAST","CASK","WVVI","BWLD","LAWS","BCPC"],
+    "Personal Services":             ["HNHPF","CSV","SCI","HRB","SFM","PRSC","FRG","MGRC","CLVT","EFSC"],
+    "Recreational Vehicles":         ["THO","WGO","PII","HOG","BC","MCFT","PATK","DOOO","MVST","LCII"],
+    "Pharmaceutical Retailers":      ["CVS","WBA","RAD","HIBB","PETQ","HIMS","TDOC","CERT","EGRX","ASRT"],
+    "Airports & Air Services":       ["CLCO","ATSG","AAR","SKYW","MESA","RJET","VLRS","OMAB","ASUR","PAGS"],
+    "Insurance Brokers":             ["AON","MMC","WTW","AJG","BRO","RYAN","ERIE","PLMR","KNSL","KINGSWAY"],
+    "Consulting Services":           ["MCK","ACN","BAH","CACI","SAIC","LDOS","ICF","EXLS","HURN","PRGS"],
+    "Footwear & Accessories":        ["NKE","DECK","ONON","CROX","SKX","BOOT","CALM","GIL","VST","BIRD"],
+    "Department Stores":             ["M","KSS","JWN","DDS","BIG","BURL","TJX","ROST","OLLI","FIVE"],
+    "Specialty Business Services":   ["BR","CSGP","DNB","EFX","EXPN","FICO","INFO","MMS","TRI","VRSK"],
+    "Real Estate - Diversified":     ["CBRE","JLL","CWK","RMAX","EXPI","DOUG","OPEN","COMP","HHC","FPH"],
+    "Resorts & Casinos":             ["LVS","MGM","WYNN","CZR","BYD","PENN","DKNG","FLUT","RSI","BALY"],
+    "Medical Instruments & Supplies":["ABT","BAX","BDX","DXCM","PODD","TNDM","ITGR","NVCR","MMSI","ICUI"],
+    "Other Precious Metals":         ["WPM","PAAS","MAG","AG","SSRM","HL","EXK","SILV","CDE","FSM"],
+    "Specialty Chemicals - Advanced":["ALB","LTHM","LAC","PLL","SQM","MP","LIVENT","AVNT","ASCMA","CEMI"],
 }
+
+# Flat lookup: ticker → industry
+TICKER_TO_INDUSTRY = {}
+for ind, tks in FINVIZ_INDUSTRIES.items():
+    for tk in tks:
+        if tk not in TICKER_TO_INDUSTRY:
+            TICKER_TO_INDUSTRY[tk] = ind
 
 
 # ─────────────────────────────────────────────
@@ -216,14 +376,16 @@ AI_UNIVERSE = {
 # This means invite codes and registered accounts persist across different browsers
 # as long as the Streamlit server keeps running.
 
-_ADMIN_HASH = hashlib.sha256("weinstein2026".encode()).hexdigest()
+_ADMIN_HASH  = hashlib.sha256("weinstein2026".encode()).hexdigest()
+_ROGER_HASH  = hashlib.sha256("roger123".encode()).hexdigest()
 
 @st.cache_resource
 def get_shared_auth():
     """Shared auth store — same object for every visitor on this server."""
     return {
         "users": {
-            "joey": {"pw": _ADMIN_HASH, "role": "admin"},
+            "joey":  {"pw": _ADMIN_HASH, "role": "admin"},
+            "roger": {"pw": _ROGER_HASH, "role": "user"},
         },
         "invite_codes": {},  # code -> {"used": bool, "created_by": str}
     }
@@ -564,18 +726,6 @@ def scan_sector_stocks(spx_close_json):
     return results
 
 @st.cache_data(ttl=6*3600, show_spinner=False)
-def scan_ai_universe(spx_close_json):
-    spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
-    rows = []
-    for tk, nm in AI_UNIVERSE.items():
-        df = fetch_weekly(tk)
-        if df.empty: continue
-        ev = evaluate(df, spx_close)
-        ev["ticker"] = tk; ev["name"] = nm
-        rows.append(ev)
-    return pd.DataFrame(rows).sort_values(["premium","early_sig","score","rs"], ascending=[False,False,False,False]).reset_index(drop=True)
-
-@st.cache_data(ttl=6*3600, show_spinner=False)
 def scan_tickers(tickers_json, spx_close_json):
     tickers   = json.loads(tickers_json)
     spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
@@ -724,9 +874,9 @@ spx_close_json = spx_close.to_json()
 # TABS
 # ─────────────────────────────────────────────
 
-tab_screener, tab_ai, tab_all, tab_portfolio, tab_dashboard = st.tabs([
-    "🏦 Sector Screener",
-    "🤖 AI Universe",
+tab_screener, tab_industries, tab_all, tab_portfolio, tab_dashboard = st.tabs([
+    "🏦 Sectors",
+    "🔍 Industries",
     "📋 All Stocks",
     "💼 My Portfolio",
     "🔒 Dashboard",
@@ -838,61 +988,235 @@ with tab_screener:
 
 
 # ═══════════════════════════════════════════════
-# TAB 2: AI UNIVERSE
+# TAB 2: INDUSTRIES (Finviz-style)
 # ═══════════════════════════════════════════════
 
-with tab_ai:
-    st.markdown("### 🤖 AI & Semiconductor Universe")
-    st.markdown(f"<span class='subtext'>{len(AI_UNIVERSE)} stocks & ETFs filtered through Weinstein Stage criteria. AI infrastructure, chips, cloud, robotics, quantum.</span>", unsafe_allow_html=True)
-
-    # Timeframe context toggle
-    col_tf1, col_tf2 = st.columns([3,1])
-    with col_tf2:
-        show_all_ai = st.toggle("Show all (incl. Stage 1/3/4)", value=False)
-
-    with st.spinner("Scanning AI universe..."):
-        ai_df = scan_ai_universe(spx_close_json)
-
-    if not show_all_ai:
-        ai_filtered = ai_df[ai_df["score"] >= 3]
-    else:
-        ai_filtered = ai_df
-
-    # Early/Premium signals first
-    ai_signals = ai_df[ai_df["early_sig"] | ai_df["premium"]]
-    if not ai_signals.empty:
-        st.markdown("#### Signals in AI Universe")
-        for _, r in ai_signals.iterrows():
-            nm = AI_UNIVERSE.get(r["ticker"], "")
-            st.markdown(signal_card(r, nm), unsafe_allow_html=True)
-        st.markdown("---")
-
-    # Full table
-    st.markdown(f"#### Full AI Ranking ({len(ai_filtered)} names)")
+@st.cache_data(ttl=6*3600, show_spinner=False)
+def scan_industry(industry_name, tickers_json, spx_close_json):
+    """Scan all stocks in a given industry."""
+    tickers   = json.loads(tickers_json)
+    spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
     rows = []
-    for _, r in ai_filtered.iterrows():
-        vol = r["vol"]
-        cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
-        rows.append({
-            "Ticker":   r["ticker"],
-            "Name":     AI_UNIVERSE.get(r["ticker"], r.get("name","")),
-            "Price":    fmt(r["price"]),
-            "%>SMA":    fmt(r["pct_above"],"%",1),
-            "RS":       fmt(r["rs"],"",1),
-            "RS Trend": rs_tag(r["rs"]),
-            "Vol":      fmt(vol,"x",1),
-            "Base":     f"{r['base_w']}w",
-            "Cross":    cross,
-            "Stop":     fmt(r["stop"]),
-            "Risk":     fmt(r["risk"],"%",1),
-            "Stage":    r["stage"],
-            "Score":    f"{r['score']}/5",
-            "Signal":   sig_icon(r),
-        })
-    ai_tbl = pd.DataFrame(rows)
-    st.dataframe(ai_tbl, use_container_width=True, hide_index=True, height=600)
+    for tk in tickers:
+        df = fetch_weekly(tk)
+        if df.empty: continue
+        ev = evaluate(df, spx_close)
+        ev["ticker"] = tk
+        rows.append(ev)
+    if not rows: return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(
+        ["premium","early_sig","score","rs"], ascending=[False,False,False,False]
+    ).reset_index(drop=True)
 
-    st.markdown(f"<p class='subtext'>Stage 3 + high score = above SMA but momentum fading. Stage 2 + EARLY = active breakout with volume. Always check weekly chart.</p>", unsafe_allow_html=True)
+def export_tradingview(tickers):
+    """Generate TradingView-compatible watchlist string."""
+    return ",".join(tickers)
+
+def export_tradingview_lines(tickers):
+    """One ticker per line for TradingView import."""
+    return "\n".join(tickers)
+
+with tab_industries:
+    st.markdown("### 🔍 Industry Screener")
+    st.markdown(f"<span class='subtext'>{len(FINVIZ_INDUSTRIES)} industries · {sum(len(v) for v in FINVIZ_INDUSTRIES.values())} stocks · Weinstein Stage Analysis · RS vs SPX</span>", unsafe_allow_html=True)
+
+    # ── Search bar ──
+    st.markdown("---")
+    search_col, btn_col = st.columns([4, 1])
+    with search_col:
+        search_query = st.text_input("🔎 Search stock or industry", placeholder="e.g. NVDA, ARM, Semiconductors, Energy...")
+    with btn_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        do_search = st.button("Analyze", use_container_width=True)
+
+    if search_query and (do_search or len(search_query) > 1):
+        q = search_query.strip().upper()
+        spx_close_s = pd.read_json(StringIO(spx_close_json), typ="series")
+
+        # Check if it's a ticker
+        matching_industry = TICKER_TO_INDUSTRY.get(q)
+        industry_matches  = [ind for ind in FINVIZ_INDUSTRIES if search_query.lower() in ind.lower()]
+
+        if q and not industry_matches:
+            # Single stock analysis
+            st.markdown(f"#### 📊 Stock Analysis: {q}")
+            with st.spinner(f"Analyzing {q}..."):
+                df = fetch_weekly(q)
+                if df.empty:
+                    st.error(f"Could not find data for {q}. Check the ticker symbol.")
+                else:
+                    r = evaluate(df, spx_close_s)
+                    r["ticker"] = q
+                    ind_name = TICKER_TO_INDUSTRY.get(q, "–")
+
+                    stage = r["stage"]
+                    if "Stage 2" in stage:   s_color = GREEN;  advice = "✅ In Stage 2 uptrend. Valid buy candidate per Weinstein."
+                    elif "Stage 3" in stage: s_color = YELLOW; advice = "⚡ In Stage 3 topping. SMA flattening. Watch closely, consider reducing."
+                    elif "Stage 4" in stage: s_color = RED;    advice = "❌ In Stage 4 downtrend. Weinstein says exit or avoid."
+                    else:                    s_color = BLUE;   advice = "🔵 In Stage 1 basing. Watch for breakout. Not actionable yet."
+
+                    # Sector RS context
+                    sector_rs_note = ""
+                    for sec_tk, sec_name in SECTORS.items():
+                        if sec_name.lower() in ind_name.lower() or ind_name.lower() in sec_name.lower():
+                            sec_row = sec_df[sec_df["ticker"] == sec_tk]
+                            if not sec_row.empty:
+                                sec_rs = sec_row.iloc[0]["rs"]
+                                sector_rs_note = f"Sector ({sec_name}) RS: {fmt(sec_rs,'',1)} — {rs_tag(sec_rs)}"
+
+                    a1,a2,a3,a4 = st.columns(4)
+                    a1.metric("Stage",    stage)
+                    a2.metric("Score",    f"{r['score']}/5")
+                    a3.metric("RS vs SPX",fmt(r['rs'],'',1))
+                    a4.metric("%>50w SMA",fmt(r['pct_above'],'%',1))
+
+                    b1,b2,b3,b4 = st.columns(4)
+                    b1.metric("Price",    fmt(r["price"]))
+                    b2.metric("50w SMA",  fmt(r["sma50w"]))
+                    b3.metric("Stop",     fmt(r["stop"]))
+                    b4.metric("Risk",     fmt(r["risk"],"%",1))
+
+                    st.markdown(f"""<div class="card-s2">
+                        <strong style="color:{s_color}">{advice}</strong><br>
+                        <span class="subtext">
+                        Industry: {ind_name} &nbsp;|&nbsp;
+                        Base: {r['base_w']}w ({r['base_q']}) &nbsp;|&nbsp;
+                        Vol: {fmt(r['vol'],'x',1)} &nbsp;|&nbsp;
+                        Cross: {"{}w ago".format(r['cross']) if r['cross'] >= 0 else "–"} &nbsp;|&nbsp;
+                        {sector_rs_note}
+                        </span>
+                    </div>""", unsafe_allow_html=True)
+
+                    if sig_icon(r):
+                        st.success(f"Signal: {sig_icon(r)}")
+
+                    # TV export for this single stock
+                    st.markdown(f"**TradingView:** `{q}`")
+
+        elif industry_matches:
+            st.markdown(f"#### Industries matching '{search_query}'")
+            for ind in industry_matches[:5]:
+                tks = FINVIZ_INDUSTRIES[ind]
+                st.markdown(f"**{ind}** — {len(tks)} stocks: {', '.join(tks[:8])}{'...' if len(tks)>8 else ''}")
+
+    st.markdown("---")
+
+    # ── Industry overview table ──
+    ind_hdr, ind_ctrl = st.columns([3,2])
+    with ind_hdr:
+        st.markdown("#### All Industries")
+    with ind_ctrl:
+        min_ind_score = st.selectbox("Min score filter", [0,1,2,3,4], index=0,
+                                      key="ind_score_filter",
+                                      label_visibility="collapsed")
+        show_only_signals = st.checkbox("Signals only", value=False)
+
+    # Build summary table (uses cached sector data for speed; full per-industry scan on click)
+    ind_summary = []
+    for ind_name, tks in FINVIZ_INDUSTRIES.items():
+        ind_summary.append({
+            "Industry": ind_name,
+            "Stocks":   len(tks),
+            "Tickers":  ", ".join(tks[:5]) + ("..." if len(tks)>5 else ""),
+        })
+    ind_sum_df = pd.DataFrame(ind_summary)
+    st.dataframe(ind_sum_df, use_container_width=True, hide_index=True, height=400)
+
+    st.markdown("---")
+
+    # ── Drill-down: click to scan industry ──
+    st.markdown("#### Drill into an Industry")
+    drill_col1, drill_col2 = st.columns([3,1])
+    with drill_col1:
+        selected_industry = st.selectbox(
+            "Select industry to scan",
+            list(FINVIZ_INDUSTRIES.keys()),
+            key="industry_drill"
+        )
+    with drill_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        scan_industry_btn = st.button("🔍 Scan Industry", use_container_width=True)
+
+    if scan_industry_btn or st.session_state.get("last_scanned_industry") == selected_industry:
+        st.session_state["last_scanned_industry"] = selected_industry
+        tks = FINVIZ_INDUSTRIES[selected_industry]
+        with st.spinner(f"Scanning {selected_industry} ({len(tks)} stocks)..."):
+            ind_df = scan_industry(selected_industry, json.dumps(tks), spx_close_json)
+
+        if not ind_df.empty:
+            # Signals summary
+            premiums = ind_df[ind_df["premium"]]
+            earlys   = ind_df[ind_df["early_sig"]]
+            s2s      = ind_df[ind_df["score"] >= 4]
+
+            m1,m2,m3,m4 = st.columns(4)
+            m1.metric(f"{selected_industry}", f"{len(ind_df)} stocks")
+            m2.metric("Premium signals", len(premiums))
+            m3.metric("Early signals",   len(earlys))
+            m4.metric("Stage 2+",        len(s2s))
+
+            # Signal cards
+            for _, r in premiums.iterrows():
+                st.markdown(signal_card(r), unsafe_allow_html=True)
+            for _, r in earlys.iterrows():
+                st.markdown(signal_card(r), unsafe_allow_html=True)
+
+            # Full table
+            disp_df = ind_df if not show_only_signals else ind_df[ind_df["score"] >= min_ind_score]
+            rows = []
+            for _, r in disp_df.iterrows():
+                vol   = r["vol"]
+                cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
+                rows.append({
+                    "Ticker":  r["ticker"],
+                    "Price":   fmt(r["price"]),
+                    "%>SMA":   fmt(r["pct_above"],"%",1),
+                    "RS":      fmt(r["rs"],"",1),
+                    "RS Trend":rs_tag(r["rs"]),
+                    "Vol":     fmt(vol,"x",1),
+                    "Base":    f"{r['base_w']}w",
+                    "Cross":   cross,
+                    "Stop":    fmt(r["stop"]),
+                    "Risk":    fmt(r["risk"],"%",1),
+                    "Stage":   r["stage"],
+                    "Score":   f"{r['score']}/5",
+                    "Signal":  sig_icon(r),
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            # ── Export to TradingView ──
+            st.markdown("---")
+            st.markdown("#### 📤 Export to TradingView")
+            exp_col1, exp_col2, exp_col3 = st.columns(3)
+            all_tks    = ind_df["ticker"].tolist()
+            signal_tks = ind_df[ind_df["score"] >= 4]["ticker"].tolist()
+            early_tks  = ind_df[ind_df["early_sig"] | ind_df["premium"]]["ticker"].tolist()
+
+            with exp_col1:
+                st.markdown("**All stocks in industry**")
+                tv_all = export_tradingview(all_tks)
+                st.code(tv_all, language=None)
+                st.download_button("⬇️ Download (.txt)", export_tradingview_lines(all_tks),
+                                   file_name=f"TV_{selected_industry.replace(' ','_')}_all.txt",
+                                   mime="text/plain", key="dl_all")
+            with exp_col2:
+                st.markdown("**Stage 2+ stocks only**")
+                tv_s2 = export_tradingview(signal_tks) if signal_tks else "No Stage 2 stocks"
+                st.code(tv_s2, language=None)
+                if signal_tks:
+                    st.download_button("⬇️ Download (.txt)", export_tradingview_lines(signal_tks),
+                                       file_name=f"TV_{selected_industry.replace(' ','_')}_s2.txt",
+                                       mime="text/plain", key="dl_s2")
+            with exp_col3:
+                st.markdown("**EARLY/PREMIUM signals**")
+                tv_early = export_tradingview(early_tks) if early_tks else "No signals right now"
+                st.code(tv_early, language=None)
+                if early_tks:
+                    st.download_button("⬇️ Download (.txt)", export_tradingview_lines(early_tks),
+                                       file_name=f"TV_{selected_industry.replace(' ','_')}_signals.txt",
+                                       mime="text/plain", key="dl_early")
+
+            st.markdown(f"<p class='subtext'>TradingView: Chart → Watchlist → Import → paste the comma-separated list, or use the .txt download and import as file.</p>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════
@@ -989,9 +1313,9 @@ with tab_portfolio:
     for sec_tk, stocks in SECTOR_STOCKS.items():
         for s in stocks:
             TICKER_SECTOR[s] = SECTORS.get(sec_tk, sec_tk)
-    for tk in AI_UNIVERSE:
+    for tk in TICKER_TO_INDUSTRY:
         if tk not in TICKER_SECTOR:
-            TICKER_SECTOR[tk] = "AI/Tech"
+            TICKER_SECTOR[tk] = TICKER_TO_INDUSTRY[tk]
 
     with st.spinner(f"Scanning {len(tickers)} positions..."):
         port_df = scan_tickers(json.dumps(tickers), spx_close_json)
