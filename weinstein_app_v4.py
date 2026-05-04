@@ -1036,7 +1036,12 @@ with tab_industries:
         matching_industry = TICKER_TO_INDUSTRY.get(q)
         industry_matches  = [ind for ind in FINVIZ_INDUSTRIES if search_query.lower() in ind.lower()]
 
-        if q and not industry_matches:
+        # Ticker check: try fetching data first.
+        # A ticker like ARM, FARM, CHARM could match industry names containing those letters.
+        # We always try the stock analysis first; fall back to industry only if data is empty.
+        looks_like_ticker = len(q) <= 6 and q.isalpha()
+
+        if q and (looks_like_ticker or not industry_matches):
             # Single stock analysis
             st.markdown(f"#### 📊 Weinstein Analysis: {q}")
             with st.spinner(f"Analyzing {q}..."):
@@ -1205,7 +1210,7 @@ with tab_industries:
 
                     st.markdown(f"<br><span class='subtext'>TradingView: <code>{q}</code></span>", unsafe_allow_html=True)
 
-        elif industry_matches:
+        elif industry_matches and not looks_like_ticker:
             st.markdown(f"#### Industries matching '{search_query}'")
             for ind in industry_matches[:5]:
                 tks = FINVIZ_INDUSTRIES[ind]
