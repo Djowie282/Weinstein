@@ -1038,7 +1038,7 @@ with tab_industries:
 
         if q and not industry_matches:
             # Single stock analysis
-            st.markdown(f"#### 📊 Stock Analysis: {q}")
+            st.markdown(f"#### 📊 Weinstein Analysis: {q}")
             with st.spinner(f"Analyzing {q}..."):
                 df = fetch_weekly(q)
                 if df.empty:
@@ -1047,50 +1047,163 @@ with tab_industries:
                     r = evaluate(df, spx_close_s)
                     r["ticker"] = q
                     ind_name = TICKER_TO_INDUSTRY.get(q, "–")
+                    stage    = r["stage"]
 
-                    stage = r["stage"]
-                    if "Stage 2" in stage:   s_color = GREEN;  advice = "✅ In Stage 2 uptrend. Valid buy candidate per Weinstein."
-                    elif "Stage 3" in stage: s_color = YELLOW; advice = "⚡ In Stage 3 topping. SMA flattening. Watch closely, consider reducing."
-                    elif "Stage 4" in stage: s_color = RED;    advice = "❌ In Stage 4 downtrend. Weinstein says exit or avoid."
-                    else:                    s_color = BLUE;   advice = "🔵 In Stage 1 basing. Watch for breakout. Not actionable yet."
-
-                    # Sector RS context
-                    sector_rs_note = ""
+                    # Find sector RS context
+                    sec_name_found = "–"
+                    sec_rs_val     = None
                     for sec_tk, sec_name in SECTORS.items():
                         if sec_name.lower() in ind_name.lower() or ind_name.lower() in sec_name.lower():
                             sec_row = sec_df[sec_df["ticker"] == sec_tk]
                             if not sec_row.empty:
-                                sec_rs = sec_row.iloc[0]["rs"]
-                                sector_rs_note = f"Sector ({sec_name}) RS: {fmt(sec_rs,'',1)} — {rs_tag(sec_rs)}"
+                                sec_rs_val     = sec_row.iloc[0]["rs"]
+                                sec_name_found = sec_name
+                                break
 
+                    # ── METRICS ROW ──
                     a1,a2,a3,a4 = st.columns(4)
-                    a1.metric("Stage",    stage)
-                    a2.metric("Score",    f"{r['score']}/5")
-                    a3.metric("RS vs SPX",fmt(r['rs'],'',1))
-                    a4.metric("%>50w SMA",fmt(r['pct_above'],'%',1))
+                    a1.metric("Stage",     stage)
+                    a2.metric("Score",     f"{r['score']}/5")
+                    a3.metric("RS vs SPX", fmt(r['rs'],'',1))
+                    a4.metric("%>50w SMA", fmt(r['pct_above'],'%',1))
 
                     b1,b2,b3,b4 = st.columns(4)
-                    b1.metric("Price",    fmt(r["price"]))
-                    b2.metric("50w SMA",  fmt(r["sma50w"]))
-                    b3.metric("Stop",     fmt(r["stop"]))
-                    b4.metric("Risk",     fmt(r["risk"],"%",1))
+                    b1.metric("Price",   fmt(r["price"]))
+                    b2.metric("50w SMA", fmt(r["sma50w"]))
+                    b3.metric("Stop",    fmt(r["stop"]))
+                    b4.metric("Risk",    fmt(r["risk"],"%",1))
 
-                    st.markdown(f"""<div class="card-s2">
-                        <strong style="color:{s_color}">{advice}</strong><br>
-                        <span class="subtext">
-                        Industry: {ind_name} &nbsp;|&nbsp;
-                        Base: {r['base_w']}w ({r['base_q']}) &nbsp;|&nbsp;
-                        Vol: {fmt(r['vol'],'x',1)} &nbsp;|&nbsp;
-                        Cross: {"{}w ago".format(r['cross']) if r['cross'] >= 0 else "–"} &nbsp;|&nbsp;
-                        {sector_rs_note}
-                        </span>
-                    </div>""", unsafe_allow_html=True)
+                    st.markdown("---")
+
+                    # ── WEINSTEIN CHECKLIST ──
+                    st.markdown("#### ✅ Weinstein Checklist")
+
+                    def check_row(passed, label, detail):
+                        icon = "✅" if passed else "❌"
+                        color = GREEN if passed else RED
+                        return f'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;margin:4px 0;background:{CARD};border-radius:8px;border:1px solid {BORDER}"><span style="font-size:1.1rem;margin-top:1px">{icon}</span><div><strong style="color:{color}">{label}</strong><br><span style="color:{SUBTEXT};font-size:0.82rem">{detail}</span></div></div>'
+
+                    # 1. Price above 50w SMA
+                    pct = r["pct_above"] or 0
+                    detail_sma = f"Price {fmt(r['price'])} is {fmt(pct,'%',1)} {'above' if pct >= 0 else 'below'} the 50w SMA ({fmt(r['sma50w'])})"
+                    st.markdown(check_row(r["above_sma"], "Price above 50-week SMA", detail_sma), unsafe_allow_html=True)
+
+                    # 2. SMA rising
+                    detail_slope = f"50w SMA is {'rising (positive slope)' if r['sma_rising'] else 'flat or declining — key warning sign'}. Weinstein: the MA must be trending up for a valid Stage 2."
+                    st.markdown(check_row(r["sma_rising"], "50-week SMA is rising", detail_slope), unsafe_allow_html=True)
+
+                    # 3. RS vs SPX
+                    rs_val = r["rs"]
+                    rs_str = fmt(rs_val, "", 1) if rs_val is not None else "n/a"
+                    detail_rs = f"RS score: {rs_str} — {rs_tag(rs_val)}. "
+                    if rs_val is not None:
+                        if rs_val >= 5:
+                            detail_rs += "Stock is outperforming the S&P 500. Weinstein looks for RS line making new highs alongside price."
+                        elif rs_val >= -3:
+                            detail_rs += "Stock moving in line with the market. Ideal setups show RS leading, not lagging."
+                        else:
+                            detail_rs += "Stock is underperforming the market. Weinstein avoids buying weak RS stocks even if price looks good."
+                    st.markdown(check_row(r["rs_up"], "Relative Strength vs SPX positive", detail_rs), unsafe_allow_html=True)
+
+                    # 4. Near 52-week high
+                    detail_high = f"Price is {fmt(r['pct_above'],'%',1)} vs 50w SMA. {'Within 15% of 52w high — stock is near breakout zone.' if r['near_high'] else 'More than 15% below 52w high — stock is not near a breakout.'}"
+                    st.markdown(check_row(r["near_high"], "Price near 52-week high (within 15%)", detail_high), unsafe_allow_html=True)
+
+                    # 5. Not overextended
+                    detail_ext = f"{fmt(pct,'%',1)} above 50w SMA. "
+                    if 0 < pct < 15:
+                        detail_ext += "Ideal entry zone — close to SMA, low risk."
+                    elif 15 <= pct < 30:
+                        detail_ext += "Extended but still acceptable. Risk is higher — consider waiting for a pullback."
+                    elif pct >= 30:
+                        detail_ext += "Overextended. Weinstein would wait for a consolidation before entering."
+                    else:
+                        detail_ext += "Below SMA — not in Stage 2 territory."
+                    st.markdown(check_row(r["not_extended"], "Not overextended (<30% above SMA)", detail_ext), unsafe_allow_html=True)
+
+                    # 6. Volume on breakout
+                    vol = r["vol"]
+                    vol_pass = r["vol_ok"]
+                    detail_vol = f"Volume ratio: {fmt(vol,'x',1)} vs 26-week average. "
+                    if vol is None:
+                        detail_vol += "No volume data available."
+                    elif vol >= 2.0:
+                        detail_vol += "Excellent — strong institutional buying confirmed."
+                    elif vol >= 1.5:
+                        detail_vol += "Good — above-average volume confirms the move."
+                    elif vol >= 1.0:
+                        detail_vol += "Average — move lacks volume conviction. Weinstein wants to see 2x+ on breakout week."
+                    else:
+                        detail_vol += "Weak — below average volume is a red flag. Could be a false breakout."
+                    st.markdown(check_row(vol_pass, "Breakout on above-average volume (≥1.5x)", detail_vol), unsafe_allow_html=True)
+
+                    # 7. Base quality
+                    bw = r["base_w"]
+                    bq_pass = bw >= 15
+                    detail_base = f"Base length: {bw} weeks ({r['base_q']}). "
+                    if bw >= 80:
+                        detail_base += "Very long base — exceptional setup. The longer the base, the bigger the potential move."
+                    elif bw >= 40:
+                        detail_base += "Long base — high quality setup. Weinstein's ideal scenario."
+                    elif bw >= 15:
+                        detail_base += "Medium base — acceptable. More time consolidating would increase conviction."
+                    else:
+                        detail_base += "Short base — low quality. Weinstein prefers minimum 15 weeks of consolidation."
+                    st.markdown(check_row(bq_pass, "Base ≥15 weeks (longer = better)", detail_base), unsafe_allow_html=True)
+
+                    # 8. Sector context
+                    sec_bullish = sec_rs_val is not None and sec_rs_val > 0
+                    detail_sec = f"Sector: {sec_name_found}. "
+                    if sec_rs_val is not None:
+                        detail_sec += f"Sector RS: {fmt(sec_rs_val,'',1)} ({rs_tag(sec_rs_val)}). "
+                        if sec_bullish:
+                            detail_sec += "Weinstein: always prefer stocks in leading sectors. Sector tailwind confirmed."
+                        else:
+                            detail_sec += "Weinstein: buying a stock in a weak sector is rowing against the tide."
+                    else:
+                        detail_sec += "Sector data not available."
+                    st.markdown(check_row(sec_bullish, "Sector is bullish vs SPX", detail_sec), unsafe_allow_html=True)
+
+                    # ── VERDICT ──
+                    st.markdown("---")
+                    st.markdown("#### 🧠 Verdict")
+
+                    score = r["score"]
+                    checks_passed = sum([
+                        r["above_sma"], r["sma_rising"], r["rs_up"],
+                        r["near_high"], r["not_extended"], vol_pass,
+                        bq_pass, sec_bullish
+                    ])
+
+                    if "Stage 2" in stage and score >= 4:
+                        if r.get("premium"):
+                            verdict_color = GREEN
+                            verdict = f"**🟢 PREMIUM SETUP** — {q} is in a textbook Weinstein Stage 2 breakout with a long base of {bw} weeks. This is the type of setup Weinstein writes about: price above a rising 50w SMA, strong RS, volume confirmation, and a solid base. All 5 core criteria met ({score}/5). Early entry window still open."
+                        elif r.get("early_sig"):
+                            verdict_color = GREEN
+                            verdict = f"**🟢 EARLY STAGE 2** — {q} just crossed above its 50w SMA recently ({r['cross']}w ago) with {fmt(vol,'x',1)} volume. The SMA is turning up and RS is positive. This is the sweet spot Weinstein targets: get in early in Stage 2 before the crowd notices. Risk is well-defined with a stop at {fmt(r['stop'])} ({fmt(r['risk'],'%',1)} below current price)."
+                        else:
+                            verdict_color = BLUE
+                            verdict = f"**🔵 STAGE 2 — LATE ENTRY** — {q} is in Stage 2 uptrend with {score}/5 criteria met, but the move is already underway (price is {fmt(pct,'%',1)} above the 50w SMA). Weinstein would still hold an existing position here, but a fresh entry carries more risk. Wait for a pullback toward the SMA for a better risk/reward."
+                    elif "Stage 1" in stage:
+                        verdict_color = BLUE
+                        if bw >= 40:
+                            verdict = f"**🔵 STAGE 1 — WATCH LIST** — {q} is building a {bw}-week base (Stage 1). This is exactly where Weinstein wants you to put it on your watchlist. A long base means energy is building. The trigger: a high-volume weekly close above the 50w SMA with the SMA starting to turn up. Not yet — but getting interesting."
+                        else:
+                            verdict = f"**🔵 STAGE 1 — TOO EARLY** — {q} is in Stage 1 basing with only {bw} weeks of consolidation. Weinstein says: be patient. There is nothing to do here yet. Set an alert for when price breaks above {fmt(r['sma50w'])} on volume."
+                    elif "Stage 3" in stage:
+                        verdict_color = YELLOW
+                        verdict = f"**🟡 STAGE 3 — CAUTION** — {q} is in Stage 3 topping. The 50w SMA is flattening after a run-up. Weinstein treats this as a sell zone for existing holders, not a buy zone. If you hold this stock, tighten your stop. If you don't, stay away — the best gains are already in."
+                    else:  # Stage 4
+                        verdict_color = RED
+                        verdict = f"**🔴 STAGE 4 — AVOID** — {q} is in a Stage 4 downtrend. Price is below a declining 50w SMA. Weinstein's rule is absolute: never buy a stock in Stage 4, regardless of how cheap it looks. {'High RS (' + fmt(rs_val, '', 1) + ') suggests a temporary bounce — this is a dead cat bounce, not a reversal.' if rs_val and rs_val > 5 else 'Wait for a full Stage 1 base to form before considering this stock again.'}"
+
+                    st.markdown(f'<div style="background:{CARD};border-left:4px solid {verdict_color};border:1px solid {verdict_color}33;border-radius:10px;padding:16px 20px;line-height:1.7">{verdict}<br><br><span style="color:{SUBTEXT};font-size:0.8rem">Checklist: {checks_passed}/8 criteria met · Industry: {ind_name} · Base: {bw}w · Stop: {fmt(r["stop"])} · Risk: {fmt(r["risk"],"%",1)}</span></div>', unsafe_allow_html=True)
 
                     if sig_icon(r):
-                        st.success(f"Signal: {sig_icon(r)}")
+                        st.success(f"Active signal: {sig_icon(r)}")
 
-                    # TV export for this single stock
-                    st.markdown(f"**TradingView:** `{q}`")
+                    st.markdown(f"<br><span class='subtext'>TradingView: <code>{q}</code></span>", unsafe_allow_html=True)
 
         elif industry_matches:
             st.markdown(f"#### Industries matching '{search_query}'")
