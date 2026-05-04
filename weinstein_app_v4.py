@@ -32,7 +32,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 
 if "dark_mode" not in st.session_state:
-    st.session_state.dark_mode = True
+    st.session_state.dark_mode = False
 
 DARK = st.session_state.dark_mode
 
@@ -874,11 +874,10 @@ spx_close_json = spx_close.to_json()
 # TABS
 # ─────────────────────────────────────────────
 
-tab_screener, tab_industries, tab_all, tab_portfolio, tab_dashboard = st.tabs([
+tab_screener, tab_industries, tab_all, tab_dashboard = st.tabs([
     "🏦 Sectors",
     "🔍 Industries",
     "📋 All Stocks",
-    "💼 My Portfolio",
     "🔒 Dashboard",
 ])
 
@@ -1288,108 +1287,6 @@ with tab_all:
         st.dataframe(disp, use_container_width=True, hide_index=True, height=700)
     else:
         st.info("Scan the Sector Screener tab first to load stock data.")
-
-
-# ═══════════════════════════════════════════════
-# TAB 4: MY PORTFOLIO
-# ═══════════════════════════════════════════════
-
-with tab_portfolio:
-    st.markdown("### 💼 Portfolio Analyzer")
-    st.markdown(f"<span class='subtext'>Enter your tickers to see their Weinstein stage, RS, sector, and stop levels.</span>", unsafe_allow_html=True)
-
-    col_input, col_btn = st.columns([4,1])
-    with col_input:
-        default_tickers = "RIVN, RKLB, MU, ARM, CRWV, BEPC, BMBL, SOFI, UBER, FOUR, RBRK, EOSE"
-        tickers_raw = st.text_input("Your tickers (comma-separated)", value=default_tickers)
-    with col_btn:
-        st.markdown("<br>", unsafe_allow_html=True)
-        scan_port = st.button("Scan portfolio", use_container_width=True)
-
-    tickers = [t.strip().upper() for t in tickers_raw.split(",") if t.strip()]
-
-    # Sector mapping for common stocks
-    TICKER_SECTOR = {}
-    for sec_tk, stocks in SECTOR_STOCKS.items():
-        for s in stocks:
-            TICKER_SECTOR[s] = SECTORS.get(sec_tk, sec_tk)
-    for tk in TICKER_TO_INDUSTRY:
-        if tk not in TICKER_SECTOR:
-            TICKER_SECTOR[tk] = TICKER_TO_INDUSTRY[tk]
-
-    with st.spinner(f"Scanning {len(tickers)} positions..."):
-        port_df = scan_tickers(json.dumps(tickers), spx_close_json)
-
-    if port_df.empty:
-        st.warning("Could not load data for the provided tickers. Check ticker symbols.")
-    else:
-        # Summary metrics
-        n_s2 = len(port_df[port_df["score"] >= 4])
-        n_s4 = len(port_df[port_df["stage"].str.contains("Stage 4", na=False)])
-        n_sig= len(port_df[port_df["early_sig"] | port_df["premium"]])
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Positions",     len(port_df))
-        m2.metric("In Stage 2",    n_s2, f"{n_s2/len(port_df)*100:.0f}%")
-        m3.metric("In Stage 4",    n_s4, delta=f"{n_s4} avoid" if n_s4 > 0 else "None", delta_color="inverse")
-        m4.metric("Buy signals",   n_sig)
-
-        st.markdown("---")
-        st.markdown("#### Position Detail")
-
-        rows = []
-        for _, r in port_df.iterrows():
-            tk    = r["ticker"]
-            sec   = TICKER_SECTOR.get(tk) or get_sector(tk)
-            vol   = r["vol"]
-            cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
-
-            # Stage color note
-            stage_note = ""
-            if "Stage 4" in r["stage"]: stage_note = "⚠ SELL CANDIDATE"
-            elif "Stage 3" in r["stage"]: stage_note = "⚡ WATCH CLOSELY"
-
-            rows.append({
-                "Ticker":   tk,
-                "Sector":   sec,
-                "Price":    fmt(r["price"]),
-                "%>SMA":    fmt(r["pct_above"],"%",1),
-                "RS":       fmt(r["rs"],"",1),
-                "RS Trend": rs_tag(r["rs"]),
-                "Vol":      fmt(vol,"x",1),
-                "Base":     f"{r['base_w']}w",
-                "Stage":    r["stage"],
-                "Score":    f"{r['score']}/5",
-                "Stop":     fmt(r["stop"]),
-                "Risk":     fmt(r["risk"],"%",1),
-                "Signal":   sig_icon(r) if sig_icon(r) else stage_note,
-            })
-
-        port_tbl = pd.DataFrame(rows)
-        st.dataframe(port_tbl, use_container_width=True, hide_index=True)
-
-        # Warnings
-        st.markdown("---")
-        stage4 = port_df[port_df["stage"].str.contains("Stage 4", na=False)]
-        stage3 = port_df[port_df["stage"].str.contains("Stage 3", na=False)]
-
-        if not stage4.empty:
-            st.markdown("#### ⚠️ Stage 4 Positions — Weinstein says exit")
-            for _, r in stage4.iterrows():
-                st.markdown(f"""<div class="card-warn">
-                    <strong style="color:{RED}">STAGE 4</strong> &nbsp;
-                    <strong>{r['ticker']}</strong> &nbsp;|&nbsp; Price {fmt(r['price'])} &nbsp;|&nbsp;
-                    {fmt(r['pct_above'],'%',1)} vs SMA &nbsp;|&nbsp; RS {fmt(r['rs'],'',1)} ({rs_tag(r['rs'])})
-                </div>""", unsafe_allow_html=True)
-
-        if not stage3.empty:
-            st.markdown("#### ⚡ Stage 3 Positions — Monitor for deterioration")
-            for _, r in stage3.iterrows():
-                st.markdown(f"""<div class="card-warn">
-                    <strong style="color:{YELLOW}">STAGE 3</strong> &nbsp;
-                    <strong>{r['ticker']}</strong> &nbsp;|&nbsp; Price {fmt(r['price'])} &nbsp;|&nbsp;
-                    {fmt(r['pct_above'],'%',1)} vs SMA &nbsp;|&nbsp; RS {fmt(r['rs'],'',1)} ({rs_tag(r['rs'])})
-                </div>""", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════
