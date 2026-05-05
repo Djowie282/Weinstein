@@ -64,21 +64,65 @@ st.markdown(f"""
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700;800&display=swap');
 
     .stApp {{ background-color: {BG}; }}
-    .block-container {{ padding: 1.5rem 2rem 3rem 2rem; max-width: 100% !important; }}
+    .block-container {{ padding: 1.5rem 2.5rem 4rem 2.5rem; max-width: 100% !important; }}
     html, body, [class*="css"] {{ color: {TEXT}; font-family: 'Syne', sans-serif; }}
-    h1 {{ font-family: 'Syne', sans-serif; font-weight: 800; color: {TEXT}; font-size: 2rem; margin-bottom: 0; }}
-    h2, h3 {{ font-family: 'Syne', sans-serif; font-weight: 700; color: {TEXT}; }}
-    .stTabs [data-baseweb="tab-list"] {{ background: {CARD}; border-radius: 8px; padding: 4px; border: 1px solid {BORDER}; gap: 4px; }}
-    .stTabs [data-baseweb="tab"] {{ background: transparent; color: {SUBTEXT}; border-radius: 6px; font-weight: 600; padding: 8px 20px; }}
-    .stTabs [aria-selected="true"] {{ background: {ACCENT}; color: white; }}
-    .stDataFrame {{ border: 1px solid {BORDER}; border-radius: 8px; overflow: hidden; }}
-    .stDataFrame table {{ width: 100%; }}
-    div[data-testid="metric-container"] {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 8px; padding: 1rem; }}
-    .stButton button {{ background: {ACCENT}; color: white; border: none; border-radius: 6px; font-weight: 600; }}
-    .stButton button:hover {{ opacity: 0.85; }}
-    .stSelectbox select, .stTextInput input, .stNumberInput input {{
-        background: {CARD}; color: {TEXT}; border: 1px solid {BORDER}; border-radius: 6px;
+    h1 {{ font-family: 'Syne', sans-serif; font-weight: 800; color: {TEXT}; font-size: 1.9rem; margin-bottom: 0; letter-spacing: -0.02em; }}
+    h2, h3, h4 {{ font-family: 'Syne', sans-serif; font-weight: 700; color: {TEXT}; letter-spacing: -0.01em; }}
+
+    /* Tabs — pill style */
+    .stTabs [data-baseweb="tab-list"] {{
+        background: {CARD}; border-radius: 12px; padding: 5px;
+        border: 1px solid {BORDER}; gap: 3px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }}
+    .stTabs [data-baseweb="tab"] {{
+        background: transparent; color: {SUBTEXT}; border-radius: 9px;
+        font-weight: 600; padding: 9px 22px; font-size: 0.9rem; transition: all 0.15s;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background: {ACCENT}; color: white;
+        box-shadow: 0 2px 8px rgba(59,91,219,0.3);
+    }}
+
+    /* Tables */
+    .stDataFrame {{ border: 1px solid {BORDER}; border-radius: 10px; overflow: hidden;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.05); }}
+
+    /* Metrics */
+    div[data-testid="metric-container"] {{
+        background: {CARD}; border: 1px solid {BORDER}; border-radius: 10px;
+        padding: 1rem 1.2rem; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        transition: transform 0.15s;
+    }}
+    div[data-testid="metric-container"]:hover {{ transform: translateY(-1px); }}
+
+    /* Buttons */
+    .stButton button {{
+        background: {ACCENT}; color: white; border: none; border-radius: 8px;
+        font-weight: 600; padding: 0.45rem 1.2rem; font-size: 0.88rem;
+        transition: all 0.15s; box-shadow: 0 2px 6px rgba(59,91,219,0.2);
+    }}
+    .stButton button:hover {{ opacity: 0.88; transform: translateY(-1px); box-shadow: 0 4px 10px rgba(59,91,219,0.3); }}
+
+    /* Inputs */
+    .stSelectbox > div > div, .stTextInput > div > div > input,
+    .stNumberInput > div > div > input, .stMultiSelect > div > div {{
+        background: {CARD} !important; color: {TEXT} !important;
+        border: 1px solid {BORDER} !important; border-radius: 8px !important;
+    }}
+
+    /* Expander */
+    .streamlit-expanderHeader {{
+        background: {CARD}; border-radius: 8px; font-weight: 600;
+        border: 1px solid {BORDER};
+    }}
+
+    /* Dividers */
+    hr {{ border-color: {BORDER}; opacity: 0.5; margin: 1.5rem 0; }}
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
+    ::-webkit-scrollbar-track {{ background: transparent; }}
+    ::-webkit-scrollbar-thumb {{ background: {BORDER}; border-radius: 3px; }}
 
     /* Signal cards */
     .card-premium {{ background: linear-gradient(135deg, rgba(63,185,80,0.12), {CARD});
@@ -458,9 +502,8 @@ def login_wall():
                         }
                         db["invite_codes"][inv_code]["used"] = True
                         # Init empty portfolio for new user
-                        if "portfolios" not in st.session_state:
-                            st.session_state.portfolios = {}
-                        st.session_state.portfolios[new_user] = []
+                        # portfolios stored in get_shared_portfolios()
+                        get_shared_portfolios()[new_user] = []
                         st.success(f"✅ Account created! You can now log in as **{new_user}**.")
 
 
@@ -468,9 +511,10 @@ def login_wall():
 # PORTFOLIO STORAGE (session_state, JSON-ready)
 # ─────────────────────────────────────────────
 
-if "portfolios" not in st.session_state:
-    # Pre-load Joey's portfolio from screenshots
-    st.session_state.portfolios = {
+@st.cache_resource
+def get_shared_portfolios():
+    """Server-level portfolio store — persists across sessions/browsers."""
+    return {
         "joey": [
             {"ticker": "RIVN",  "shares": 1, "avg_cost": 0, "notes": "LEAPS 2027/2028"},
             {"ticker": "MU",    "shares": 1, "avg_cost": 0, "notes": ""},
@@ -484,7 +528,8 @@ if "portfolios" not in st.session_state:
             {"ticker": "FOUR",  "shares": 1, "avg_cost": 0, "notes": ""},
             {"ticker": "RBRK",  "shares": 1, "avg_cost": 0, "notes": ""},
             {"ticker": "EOSE",  "shares": 1, "avg_cost": 0, "notes": ""},
-        ]
+        ],
+        "roger": [],
     }
 
 
@@ -1218,122 +1263,229 @@ with tab_industries:
 
     st.markdown("---")
 
-    # ── Industry overview table ──
-    ind_hdr, ind_ctrl = st.columns([3,2])
-    with ind_hdr:
-        st.markdown("#### All Industries")
-    with ind_ctrl:
-        min_ind_score = st.selectbox("Min score filter", [0,1,2,3,4], index=0,
-                                      key="ind_score_filter",
-                                      label_visibility="collapsed")
-        show_only_signals = st.checkbox("Signals only", value=False)
+    # ── RS helper for industries ──
+    @st.cache_data(ttl=3600)
+    def get_industry_rs(tickers_json, period_days):
+        """Compute equal-weight return of industry basket vs SPY over period."""
+        tks = json.loads(tickers_json)
+        end   = datetime.today()
+        start = end - timedelta(days=period_days + 5)
+        try:
+            all_tks = list(set(tks + ["SPY"]))
+            raw = yf.download(all_tks, start=start, end=end,
+                              auto_adjust=False, progress=False)["Close"]
+            if isinstance(raw, pd.Series): raw = raw.to_frame(all_tks[0])
+            raw = raw.ffill().dropna(how="all")
+            if len(raw) < 2: return None
+            # Use last N trading days
+            n = min(period_days, len(raw) - 1)
+            basket = raw[tks].dropna(axis=1).iloc[-(n+1):]
+            if basket.empty or "SPY" not in raw.columns: return None
+            ind_ret = ((basket.iloc[-1] / basket.iloc[0]) - 1).mean() * 100
+            spy_ret = (raw["SPY"].iloc[-1] / raw["SPY"].iloc[-n-1] - 1) * 100
+            return round(ind_ret - spy_ret, 2)
+        except: return None
 
-    # Build summary table (uses cached sector data for speed; full per-industry scan on click)
-    ind_summary = []
-    for ind_name, tks in FINVIZ_INDUSTRIES.items():
-        ind_summary.append({
-            "Industry": ind_name,
-            "Stocks":   len(tks),
-            "Tickers":  ", ".join(tks[:5]) + ("..." if len(tks)>5 else ""),
-        })
-    ind_sum_df = pd.DataFrame(ind_summary)
-    st.dataframe(ind_sum_df, use_container_width=True, hide_index=True, height=400)
+    # ── Industry sub-tabs ──
+    ind_tab1, ind_tab2 = st.tabs(["📊 All Industries", "🚨 Signals"])
 
-    st.markdown("---")
+    with ind_tab1:
+        st.markdown("---")
+        ctrl1, ctrl2, ctrl3 = st.columns([3,1,1])
+        with ctrl2:
+            show_rs = st.toggle("Show RS periods", value=True)
 
-    # ── Drill-down: click to scan industry ──
-    st.markdown("#### Drill into an Industry")
-    drill_col1, drill_col2 = st.columns([3,1])
-    with drill_col1:
-        selected_industry = st.selectbox(
-            "Select industry to scan",
-            list(FINVIZ_INDUSTRIES.keys()),
-            key="industry_drill"
-        )
-    with drill_col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        scan_industry_btn = st.button("🔍 Scan Industry", use_container_width=True)
+        # Build summary with RS columns
+        ind_summary = []
+        for ind_name, tks in FINVIZ_INDUSTRIES.items():
+            row = {
+                "Industry": ind_name,
+                "Stocks":   len(tks),
+            }
+            if show_rs:
+                rs1w = get_industry_rs(json.dumps(tks[:8]), 5)
+                rs1m = get_industry_rs(json.dumps(tks[:8]), 21)
+                rs3m = get_industry_rs(json.dumps(tks[:8]), 63)
+                row["RS 1W"] = f"{rs1w:+.1f}%" if rs1w is not None else "–"
+                row["RS 1M"] = f"{rs1m:+.1f}%" if rs1m is not None else "–"
+                row["RS 3M"] = f"{rs3m:+.1f}%" if rs3m is not None else "–"
+            row["Top stocks"] = ", ".join(tks[:5]) + ("…" if len(tks)>5 else "")
+            ind_summary.append(row)
 
-    if scan_industry_btn or st.session_state.get("last_scanned_industry") == selected_industry:
-        st.session_state["last_scanned_industry"] = selected_industry
-        tks = FINVIZ_INDUSTRIES[selected_industry]
-        with st.spinner(f"Scanning {selected_industry} ({len(tks)} stocks)..."):
-            ind_df = scan_industry(selected_industry, json.dumps(tks), spx_close_json)
+        ind_sum_df = pd.DataFrame(ind_summary)
+        st.dataframe(ind_sum_df, use_container_width=True, hide_index=True, height=500)
 
-        if not ind_df.empty:
-            # Signals summary
-            premiums = ind_df[ind_df["premium"]]
-            earlys   = ind_df[ind_df["early_sig"]]
-            s2s      = ind_df[ind_df["score"] >= 4]
+        st.markdown("---")
+        # ── Drill-down ──
+        st.markdown(f"<h4 style='margin-bottom:4px'>Drill into an Industry</h4>", unsafe_allow_html=True)
+        drill_col1, drill_col2 = st.columns([4,1])
+        with drill_col1:
+            selected_industry = st.selectbox("", list(FINVIZ_INDUSTRIES.keys()),
+                                             key="industry_drill", label_visibility="collapsed")
+        with drill_col2:
+            scan_industry_btn = st.button("🔍 Scan", use_container_width=True)
 
-            m1,m2,m3,m4 = st.columns(4)
-            m1.metric(f"{selected_industry}", f"{len(ind_df)} stocks")
-            m2.metric("Premium signals", len(premiums))
-            m3.metric("Early signals",   len(earlys))
-            m4.metric("Stage 2+",        len(s2s))
+        if scan_industry_btn or st.session_state.get("last_scanned_industry") == selected_industry:
+            st.session_state["last_scanned_industry"] = selected_industry
+            tks = FINVIZ_INDUSTRIES[selected_industry]
+            with st.spinner(f"Scanning {selected_industry}…"):
+                ind_df = scan_industry(selected_industry, json.dumps(tks), spx_close_json)
 
-            # Signal cards
-            for _, r in premiums.iterrows():
-                st.markdown(signal_card(r), unsafe_allow_html=True)
-            for _, r in earlys.iterrows():
-                st.markdown(signal_card(r), unsafe_allow_html=True)
+            if not ind_df.empty:
+                premiums = ind_df[ind_df["premium"]]
+                earlys   = ind_df[ind_df["early_sig"]]
+                s2s      = ind_df[ind_df["score"] >= 4]
 
-            # Full table
-            disp_df = ind_df if not show_only_signals else ind_df[ind_df["score"] >= min_ind_score]
-            rows = []
-            for _, r in disp_df.iterrows():
-                vol   = r["vol"]
-                cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
-                rows.append({
-                    "Ticker":  r["ticker"],
-                    "Price":   fmt(r["price"]),
-                    "%>SMA":   fmt(r["pct_above"],"%",1),
-                    "RS":      fmt(r["rs"],"",1),
-                    "RS Trend":rs_tag(r["rs"]),
-                    "Vol":     fmt(vol,"x",1),
-                    "Base":    f"{r['base_w']}w",
-                    "Cross":   cross,
-                    "Stop":    fmt(r["stop"]),
-                    "Risk":    fmt(r["risk"],"%",1),
-                    "Stage":   r["stage"],
-                    "Score":   f"{r['score']}/5",
-                    "Signal":  sig_icon(r),
-                })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                # Header metrics
+                hm1,hm2,hm3,hm4 = st.columns(4)
+                hm1.metric("Stocks scanned", len(ind_df))
+                hm2.metric("🟢 Premium",     len(premiums))
+                hm3.metric("🟡 Early",       len(earlys))
+                hm4.metric("🔵 Stage 2+",    len(s2s))
 
-            # ── Export to TradingView ──
-            st.markdown("---")
-            st.markdown("#### 📤 Export to TradingView")
-            exp_col1, exp_col2, exp_col3 = st.columns(3)
-            all_tks    = ind_df["ticker"].tolist()
-            signal_tks = ind_df[ind_df["score"] >= 4]["ticker"].tolist()
-            early_tks  = ind_df[ind_df["early_sig"] | ind_df["premium"]]["ticker"].tolist()
+                # Signal cards
+                for _, r in premiums.iterrows():
+                    st.markdown(signal_card(r), unsafe_allow_html=True)
+                for _, r in earlys.iterrows():
+                    st.markdown(signal_card(r), unsafe_allow_html=True)
 
-            with exp_col1:
-                st.markdown("**All stocks in industry**")
-                tv_all = export_tradingview(all_tks)
-                st.code(tv_all, language=None)
-                st.download_button("⬇️ Download (.txt)", export_tradingview_lines(all_tks),
-                                   file_name=f"TV_{selected_industry.replace(' ','_')}_all.txt",
-                                   mime="text/plain", key="dl_all")
-            with exp_col2:
-                st.markdown("**Stage 2+ stocks only**")
-                tv_s2 = export_tradingview(signal_tks) if signal_tks else "No Stage 2 stocks"
-                st.code(tv_s2, language=None)
-                if signal_tks:
-                    st.download_button("⬇️ Download (.txt)", export_tradingview_lines(signal_tks),
-                                       file_name=f"TV_{selected_industry.replace(' ','_')}_s2.txt",
-                                       mime="text/plain", key="dl_s2")
-            with exp_col3:
-                st.markdown("**EARLY/PREMIUM signals**")
-                tv_early = export_tradingview(early_tks) if early_tks else "No signals right now"
-                st.code(tv_early, language=None)
-                if early_tks:
-                    st.download_button("⬇️ Download (.txt)", export_tradingview_lines(early_tks),
-                                       file_name=f"TV_{selected_industry.replace(' ','_')}_signals.txt",
-                                       mime="text/plain", key="dl_early")
+                # Full table
+                rows = []
+                for _, r in ind_df.iterrows():
+                    vol   = r["vol"]
+                    cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
+                    rows.append({
+                        "Ticker":   r["ticker"],
+                        "Price":    fmt(r["price"]),
+                        "%>SMA":    fmt(r["pct_above"],"%",1),
+                        "RS":       fmt(r["rs"],"",1),
+                        "RS Trend": rs_tag(r["rs"]),
+                        "Vol":      fmt(vol,"x",1),
+                        "Base":     f"{r['base_w']}w",
+                        "Cross":    cross,
+                        "Stop":     fmt(r["stop"]),
+                        "Risk":     fmt(r["risk"],"%",1),
+                        "Stage":    r["stage"],
+                        "Score":    f"{r['score']}/5",
+                        "Signal":   sig_icon(r),
+                    })
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-            st.markdown(f"<p class='subtext'>TradingView: Chart → Watchlist → Import → paste the comma-separated list, or use the .txt download and import as file.</p>", unsafe_allow_html=True)
+                # Export
+                st.markdown("---")
+                st.markdown("#### 📤 Export to TradingView")
+                ec1,ec2,ec3 = st.columns(3)
+                all_tks    = ind_df["ticker"].tolist()
+                signal_tks = ind_df[ind_df["score"] >= 4]["ticker"].tolist()
+                early_tks  = ind_df[ind_df["early_sig"] | ind_df["premium"]]["ticker"].tolist()
+                with ec1:
+                    st.caption("All stocks")
+                    st.code(export_tradingview(all_tks), language=None)
+                    st.download_button("⬇️ All (.txt)", export_tradingview_lines(all_tks),
+                                       file_name=f"TV_{selected_industry.replace(' ','_')}_all.txt",
+                                       mime="text/plain", key="dl_all")
+                with ec2:
+                    st.caption("Stage 2+ only")
+                    st.code(export_tradingview(signal_tks) if signal_tks else "–", language=None)
+                    if signal_tks:
+                        st.download_button("⬇️ S2+ (.txt)", export_tradingview_lines(signal_tks),
+                                           file_name=f"TV_{selected_industry.replace(' ','_')}_s2.txt",
+                                           mime="text/plain", key="dl_s2")
+                with ec3:
+                    st.caption("EARLY/PREMIUM")
+                    st.code(export_tradingview(early_tks) if early_tks else "–", language=None)
+                    if early_tks:
+                        st.download_button("⬇️ Signals (.txt)", export_tradingview_lines(early_tks),
+                                           file_name=f"TV_{selected_industry.replace(' ','_')}_signals.txt",
+                                           mime="text/plain", key="dl_early")
+                st.caption("TradingView → Watchlist → Import → paste or upload file")
+
+    with ind_tab2:
+        st.markdown("---")
+        st.markdown("### 🚨 All Industry Signals")
+        st.markdown(f"<span class='subtext'>Select industries to scan. Shows all PREMIUM, EARLY and Stage 2 stocks with sector context.</span>", unsafe_allow_html=True)
+
+        sig_col1, sig_col2 = st.columns([3,1])
+        with sig_col1:
+            sig_industries = st.multiselect(
+                "Select industries to scan",
+                list(FINVIZ_INDUSTRIES.keys()),
+                default=list(FINVIZ_INDUSTRIES.keys())[:12],
+                label_visibility="collapsed"
+            )
+        with sig_col2:
+            min_sig_score = st.selectbox("Min score", [3,4,5], index=0, key="sig_min_score")
+            run_sig_scan  = st.button("🔍 Scan selected", use_container_width=True)
+
+        if run_sig_scan and sig_industries:
+            all_signal_rows = []
+            progress = st.progress(0, text="Scanning industries…")
+            for idx, ind_name in enumerate(sig_industries):
+                progress.progress((idx+1)/len(sig_industries), text=f"Scanning {ind_name}…")
+                tks = FINVIZ_INDUSTRIES[ind_name]
+                df  = scan_industry(ind_name, json.dumps(tks), spx_close_json)
+                if df.empty: continue
+                # Find matching broad sector RS
+                sec_rs_for_ind = None
+                sec_name_for_ind = "–"
+                for sec_tk, sec_name in SECTORS.items():
+                    if sec_name.lower() in ind_name.lower() or any(w in sec_name.lower() for w in ind_name.lower().split()):
+                        sec_row = sec_df[sec_df["ticker"] == sec_tk]
+                        if not sec_row.empty:
+                            sec_rs_for_ind  = sec_row.iloc[0]["rs"]
+                            sec_name_for_ind = sec_name
+                            break
+                for _, r in df[df["score"] >= min_sig_score].iterrows():
+                    vol   = r["vol"]
+                    cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
+                    all_signal_rows.append({
+                        "Signal":   sig_icon(r),
+                        "Ticker":   r["ticker"],
+                        "Industry": ind_name,
+                        "Sector":   sec_name_for_ind,
+                        "Sec RS":   fmt(sec_rs_for_ind,"",1),
+                        "Sec Trend":rs_tag(sec_rs_for_ind),
+                        "Stage":    r["stage"],
+                        "Score":    f"{r['score']}/5",
+                        "RS":       fmt(r["rs"],"",1),
+                        "RS Trend": rs_tag(r["rs"]),
+                        "Price":    fmt(r["price"]),
+                        "%>SMA":    fmt(r["pct_above"],"%",1),
+                        "Vol":      fmt(vol,"x",1),
+                        "Base":     f"{r['base_w']}w",
+                        "Cross":    cross,
+                        "Stop":     fmt(r["stop"]),
+                        "Risk":     fmt(r["risk"],"%",1),
+                    })
+            progress.empty()
+
+            if all_signal_rows:
+                sig_df = pd.DataFrame(all_signal_rows).sort_values(
+                    ["Signal","Score","RS"], ascending=[True, False, False]
+                )
+                n_prem  = len(sig_df[sig_df["Signal"].str.contains("PREMIUM", na=False)])
+                n_early = len(sig_df[sig_df["Signal"].str.contains("EARLY",   na=False)])
+                n_s2    = len(sig_df[sig_df["Signal"].str.contains("S2",      na=False)])
+
+                sm1,sm2,sm3,sm4 = st.columns(4)
+                sm1.metric("Total signals", len(sig_df))
+                sm2.metric("🟢 Premium",    n_prem)
+                sm3.metric("🟡 Early",      n_early)
+                sm4.metric("🔵 Stage 2",    n_s2)
+
+                st.dataframe(sig_df, use_container_width=True, hide_index=True, height=600)
+
+                # Export all signal tickers
+                st.markdown("---")
+                all_sig_tks = sig_df["Ticker"].tolist()
+                st.markdown("**Export signals to TradingView:**")
+                st.code(export_tradingview(all_sig_tks), language=None)
+                st.download_button("⬇️ Download all signals (.txt)",
+                                   export_tradingview_lines(all_sig_tks),
+                                   file_name="TV_all_signals.txt",
+                                   mime="text/plain", key="dl_all_sigs")
+            else:
+                st.info("No signals found in selected industries. Try lowering the minimum score or selecting more industries.")
 
 
 # ═══════════════════════════════════════════════
@@ -1465,7 +1617,7 @@ with tab_dashboard:
         import plotly.express as px
 
         user      = st.session_state.current_user
-        portfolio = st.session_state.portfolios.get(user, [])
+        portfolio = get_shared_portfolios().get(user, [])
 
         col_dash, col_logout = st.columns([5,1])
         with col_dash:
@@ -1535,7 +1687,7 @@ with tab_dashboard:
                         portfolio.append({"ticker": new_tk, "shares": new_sh,
                                           "avg_cost": new_cost, "notes": new_note})
                         st.success(f"Added {new_tk}")
-                    st.session_state.portfolios[user] = portfolio
+                    get_shared_portfolios()[user] = portfolio
                     st.rerun()
 
             st.markdown("---")
@@ -1560,7 +1712,7 @@ with tab_dashboard:
                             st.session_state[f"confirm_delete_{sell_tk}"] = True
                         else:
                             pos_to_sell["shares"] = round(max_sh - sell_sh, 4)
-                            st.session_state.portfolios[user] = portfolio
+                            get_shared_portfolios()[user] = portfolio
                             st.success(f"Sold {sell_sh:.2f} sh of {sell_tk}. Remaining: {pos_to_sell['shares']:.2f} sh")
                             st.rerun()
 
@@ -1570,7 +1722,7 @@ with tab_dashboard:
                     c_yes, c_no = st.columns(2)
                     if c_yes.button("✅ Yes, remove", key=f"yes_{sell_tk}"):
                         portfolio[:] = [p for p in portfolio if p["ticker"] != sell_tk]
-                        st.session_state.portfolios[user] = portfolio
+                        get_shared_portfolios()[user] = portfolio
                         st.session_state.pop(f"confirm_delete_{sell_tk}", None)
                         st.success(f"Removed {sell_tk}")
                         st.rerun()
@@ -1597,7 +1749,7 @@ with tab_dashboard:
                         y, n = st.columns(2)
                         if y.button("Yes", key=f"y_{i}"):
                             portfolio.pop(i)
-                            st.session_state.portfolios[user] = portfolio
+                            get_shared_portfolios()[user] = portfolio
                             st.session_state.pop(f"confirm_delete_{pos['ticker']}_{i}", None)
                             st.rerun()
                         if n.button("No", key=f"n_{i}"):
