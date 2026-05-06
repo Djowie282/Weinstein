@@ -728,6 +728,17 @@ def evaluate(df, spx_close):
     r["label"] = labels.get(r["score"], "Not Stage 2")
     r["early_sig"] = r["early"] and r["sma_rising"] and r["rs_up"] and r["vol_ok"]
     r["premium"]   = r["early_sig"] and bw >= 40
+
+    # Tightness: std dev of (price/SMA - 1) over the base period
+    # Lower = tighter, flatter base = better Stage 1 watchlist candidate
+    if bw >= 10:
+        base_start_idx = max(0, len(close) - bw - (cross if cross >= 0 else 0) - 2)
+        base_slice     = close.iloc[base_start_idx : len(close) - (cross if cross >= 0 else 0)]
+        ma_slice       = ma50.iloc[base_start_idx  : len(close) - (cross if cross >= 0 else 0)]
+        ratio_series   = (base_slice / ma_slice - 1).dropna()
+        r["base_tightness"] = round(float(ratio_series.std()) * 100, 2) if len(ratio_series) > 3 else None
+    else:
+        r["base_tightness"] = None
     return r
 
 
@@ -1029,6 +1040,160 @@ with tab_screener:
         st.markdown(f"<p class='subtext'>Inspect weekly chart for each PREMIUM/EARLY name. Tight flat base = good. Wide choppy = skip.</p>", unsafe_allow_html=True)
 
     st.markdown(f"<p class='subtext'>Data cached 6h · Last scan: {datetime.now().strftime('%Y-%m-%d %H:%M')} UTC · Weekly closes (Fri)</p>", unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────
+    # STAGE 1 WATCHLIST
+    # ─────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 👁 Stage 1 Watchlist — Bases Building")
+    st.markdown(f"""<span class='subtext'>Stocks currently in Stage 1 (basing) with a base of 40+ weeks and tight price action.
+    These are NOT buy signals yet — they go on your watchlist. The trigger is a high-volume breakout above the 50w SMA with the SMA turning up.
+    Lower tightness % = flatter, cleaner base.</span>""", unsafe_allow_html=True)
+
+    @st.cache_data(ttl=6*3600, show_spinner=False)
+    def scan_stage1_watchlist(spx_close_json):
+        """Scan all sector stocks for Stage 1 bases 40+ weeks, sorted by tightness."""
+        spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
+        all_results = []
+        for sec_tk, stocks in SECTOR_STOCKS.items():
+            for tk in stocks:
+                df = fetch_weekly(tk)
+                if df.empty: continue
+                ev = evaluate(df, spx_close)
+                if "Stage 1" not in ev.get("stage",""):      continue
+                if ev.get("base_w", 0) < 40:                 continue
+                ev["ticker"]   = tk
+                ev["sec_tk"]   = sec_tk
+                ev["sec_name"] = SECTORS.get(sec_tk, sec_tk)
+                all_results.append(ev)
+        return pd.DataFrame(all_results) if all_results else pd.DataFrame()
+
+    with st.spinner("Scanning for Stage 1 bases…"):
+        s1_df_raw = scan_stage1_watchlist(spx_close_json)
+
+    if s1_df_raw.empty:
+        st.info("No Stage 1 bases of 40+ weeks found in the current universe.")
+    else:
+        # Enrich with sector RS
+        def get_sec_rs(sec_tk):
+            row = sec_df[sec_df["ticker"] == sec_tk]
+            return float(row.iloc[0]["rs"]) if not row.empty and row.iloc[0]["rs"] is not None else None
+
+        s1_df_raw["sec_rs"] = s1_df_raw["sec_tk"].apply(get_sec_rs)
+
+        # Sort: tightest base first, then longest base
+        s1_df_raw = s1_df_raw.sort_values(
+            ["base_tightness", "base_w"],
+            ascending=[True, False],
+            na_position="last"
+        ).reset_index(drop=True)
+
+        # Filter controls
+        s1c1, s1c2, s1c3 = st.columns(3)
+        with s1c1:
+            min_base_wks = st.slider("Min base length (weeks)", 40, 120, 40, step=5, key="s1_base")
+        with s1c2:
+            max_tightness = st.slider("Max tightness % (lower = flatter)", 2.0, 20.0, 12.0, step=0.5, key="s1_tight")
+        with s1c3:
+            sec_rs_filter = st.selectbox("Sector filter", ["All sectors","Bullish sectors only","Bearish sectors only"], key="s1_sec")
+
+        s1_df = s1_df_raw[s1_df_raw["base_w"] >= min_base_wks]
+        s1_df = s1_df[s1_df["base_tightness"].notna() & (s1_df["base_tightness"] <= max_tightness)]
+        if sec_rs_filter == "Bullish sectors only":
+            s1_df = s1_df[s1_df["sec_rs"].notna() & (s1_df["sec_rs"] > 0)]
+        elif sec_rs_filter == "Bearish sectors only":
+            s1_df = s1_df[s1_df["sec_rs"].notna() & (s1_df["sec_rs"] <= 0)]
+
+        st.markdown(f"<span class='subtext'>{len(s1_df)} stocks found</span>", unsafe_allow_html=True)
+
+        if not s1_df.empty:
+            # Summary cards for top picks (tightest + longest base)
+            top_picks = s1_df.head(5)
+            st.markdown("#### 🏆 Top Picks (tightest bases)")
+            pick_cols = st.columns(min(5, len(top_picks)))
+            for idx, (_, r) in enumerate(top_picks.iterrows()):
+                sec_rs_v = r.get("sec_rs")
+                sec_color = GREEN if (sec_rs_v and sec_rs_v > 0) else RED
+                tight = r.get("base_tightness")
+                with pick_cols[idx]:
+                    st.markdown(f"""
+                    <div style="background:{CARD};border:1px solid {BORDER};border-radius:10px;
+                         padding:12px 14px;text-align:center;">
+                      <div style="font-size:1.2rem;font-weight:800;margin-bottom:4px">🔵 {r['ticker']}</div>
+                      <div style="font-size:0.78rem;color:{SUBTEXT}">{r['sec_name']}</div>
+                      <div style="font-size:1rem;font-weight:700;margin:6px 0">{r['base_w']}w base</div>
+                      <div style="font-size:0.8rem">Tightness: <strong>{fmt(tight,'%',1)}</strong></div>
+                      <div style="font-size:0.78rem;color:{sec_color}">
+                        Sec RS: {fmt(sec_rs_v,'',1)} ({rs_tag(sec_rs_v)})
+                      </div>
+                      <div style="font-size:0.75rem;color:{SUBTEXT};margin-top:4px">
+                        Price: {fmt(r['price'])} · SMA: {fmt(r['sma50w'])}
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+
+            st.markdown("---")
+
+            # Full table
+            st.markdown("#### All Stage 1 Bases")
+            s1_rows = []
+            for _, r in s1_df.iterrows():
+                sec_rs_v = r.get("sec_rs")
+                tight    = r.get("base_tightness")
+                # Analysis snippet
+                if tight is not None and tight < 5:
+                    analysis = "Extremely tight — institutional accumulation possible"
+                elif tight is not None and tight < 8:
+                    analysis = "Clean flat base — good watchlist candidate"
+                elif tight is not None and tight < 12:
+                    analysis = "Moderate chop — acceptable base quality"
+                else:
+                    analysis = "Wide base — wait for tightening"
+
+                sec_rs_note = rs_tag(sec_rs_v) if sec_rs_v is not None else "–"
+                if sec_rs_v and sec_rs_v > 10:
+                    sec_analysis = "Sector leading market ✓"
+                elif sec_rs_v and sec_rs_v > 0:
+                    sec_analysis = "Sector mildly bullish"
+                elif sec_rs_v and sec_rs_v > -5:
+                    sec_analysis = "Sector neutral"
+                else:
+                    sec_analysis = "Sector lagging — headwind"
+
+                s1_rows.append({
+                    "Ticker":       r["ticker"],
+                    "Sector":       r["sec_name"],
+                    "Sec RS":       fmt(sec_rs_v,"",1),
+                    "Sec Trend":    sec_rs_note,
+                    "Base (wks)":   r["base_w"],
+                    "Tightness":    fmt(tight,"%",1) if tight is not None else "–",
+                    "Price":        fmt(r["price"]),
+                    "vs SMA":       fmt(r["pct_above"],"%",1),
+                    "RS Stock":     fmt(r["rs"],"",1),
+                    "Vol ratio":    fmt(r["vol"],"x",1),
+                    "SMA slope":    "Rising" if r["sma_rising"] else "Flat/Down",
+                    "Base quality": analysis,
+                    "Sector note":  sec_analysis,
+                    "Trigger at":   fmt(r["sma50w"]) + " + volume",
+                })
+
+            s1_tbl = pd.DataFrame(s1_rows)
+            st.dataframe(s1_tbl, use_container_width=True, hide_index=True, height=500)
+
+            # TV Export
+            st.markdown("---")
+            s1_tks = s1_df["ticker"].tolist()
+            exa, exb = st.columns(2)
+            with exa:
+                st.markdown("**Export all Stage 1 bases to TradingView (for alerts):**")
+                st.code(export_tradingview(s1_tks), language=None)
+            with exb:
+                st.download_button(
+                    "⬇️ Download Stage 1 watchlist (.txt)",
+                    export_tradingview_lines(s1_tks),
+                    file_name="TV_stage1_watchlist.txt",
+                    mime="text/plain", key="dl_s1"
+                )
+            st.markdown(f"<span class='subtext'>TradingView: open a watchlist → Import → paste list. Then set price alerts on each: alert when weekly close > 50w SMA on above-average volume.</span>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════
