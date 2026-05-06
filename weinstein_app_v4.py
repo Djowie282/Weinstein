@@ -1187,13 +1187,30 @@ with tab_screener:
             n_e = len(nyse_df[nyse_df["Signal"].str.contains("EARLY",   na=False)])
             n_s = len(nyse_df[nyse_df["Signal"].str.contains("S2",      na=False)])
 
-            nm1,nm2,nm3,nm4 = st.columns(4)
+            nm1,nm2,nm3,nm4,nm5 = st.columns(5)
             nm1.metric("Total Stage 2+", len(nyse_df))
             nm2.metric("🟢 Premium",     n_p)
             nm3.metric("🟡 Early",       n_e)
             nm4.metric("🔵 Stage 2",     n_s)
 
-            st.dataframe(nyse_df, use_container_width=True, hide_index=True, height=600)
+            # Signal filter
+            sig_filter_ms = nm5.selectbox(
+                "Show",
+                ["All signals", "🟢 PREMIUM only", "🟡 EARLY only", "🟢+🟡 Best only", "🔵 Stage 2 only"],
+                key="sig_filter_ms"
+            )
+            if sig_filter_ms == "🟢 PREMIUM only":
+                nyse_df_show = nyse_df[nyse_df["Signal"].str.contains("PREMIUM", na=False)]
+            elif sig_filter_ms == "🟡 EARLY only":
+                nyse_df_show = nyse_df[nyse_df["Signal"].str.contains("EARLY", na=False)]
+            elif sig_filter_ms == "🟢+🟡 Best only":
+                nyse_df_show = nyse_df[nyse_df["Signal"].str.contains("PREMIUM|EARLY", na=False)]
+            elif sig_filter_ms == "🔵 Stage 2 only":
+                nyse_df_show = nyse_df[nyse_df["Signal"].str.contains("S2", na=False)]
+            else:
+                nyse_df_show = nyse_df
+
+            st.dataframe(nyse_df_show, use_container_width=True, hide_index=True, height=600)
 
             # Export
             st.markdown("---")
@@ -1250,10 +1267,13 @@ with tab_screener:
 | Cross | Weeks ago price crossed above 50w SMA |
 | Stop | Suggested stop = max(50w SMA, 8w swing low) |
 | Risk | % below current price that stop sits |
-| Stage 3 + S2 score | Stock is above SMA (→ score ≥4) but SMA slope is flat/declining (→ Stage 3). The SMA just stopped rising. This is a yellow flag: position exists but momentum is fading. |
-| PREMIUM | Early breakout + base ≥40w. Weinstein's ideal setup |
-| EARLY | Recent crossover + rising SMA + RS up + volume confirmed |
-| S2 | Stage 2 (4-5 of 5) but no fresh entry — you're late to this move |
+| **🟢 PREMIUM** | **Best setup.** Recent SMA crossover (≤8w ago) + SMA rising + RS positive + volume ≥1.5x + base ≥40 weeks. The longer the base, the bigger the potential move. Rare but highest conviction. |
+| **🟡 EARLY** | **Fresh entry.** Recent SMA crossover (≤8w ago) + SMA rising + RS positive + volume confirmed. No minimum base requirement. More frequent than Premium. |
+| **🔵 S2** | **In uptrend but late.** All or most Stage 2 criteria met, but no recent crossover — the move is already underway. Valid to hold, risky to buy fresh. |
+| Stage 3 + S2 score | Stock is above SMA (score ≥4) but SMA slope is flat/declining. The MA just stopped rising — yellow flag, momentum fading. |
+| **Signal filters** | All signals = full list · PREMIUM only = best quality, fewest names · EARLY only = fresh entries · Best only = PREMIUM + EARLY combined (recommended shortlist) · Stage 2 only = already running |
+| Stage 1 Watchlist | Stocks in Stage 1 (basing) with 40+ week base and tight price action. Not a buy yet — set an alert for when price closes above the 50w SMA on high volume. |
+| Tightness % | Standard deviation of price vs SMA during the base. <5% = extremely tight (institutional accumulation possible) · 5-8% = clean base · 8-12% = moderate · >12% = too wide |
         """)
         st.markdown(f"<p class='subtext'>Inspect weekly chart for each PREMIUM/EARLY name. Tight flat base = good. Wide choppy = skip.</p>", unsafe_allow_html=True)
 
@@ -1903,12 +1923,33 @@ with tab_industries:
                         "Risk":      fmt(r["risk"],"%",1),
                     })
                 ind_nyse_df = pd.DataFrame(ind_nyse_rows)
-                in1,in2,in3,in4 = st.columns(4)
-                in1.metric("Total", len(ind_nyse_df))
-                in2.metric("🟢 Premium", len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("PREMIUM",na=False)]))
-                in3.metric("🟡 Early",   len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("EARLY",  na=False)]))
-                in4.metric("🔵 S2",      len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("S2",     na=False)]))
-                st.dataframe(ind_nyse_df, use_container_width=True, hide_index=True, height=600)
+                ind_n_p = len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("PREMIUM",na=False)])
+                ind_n_e = len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("EARLY",  na=False)])
+                ind_n_s = len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("S2",     na=False)])
+
+                in1,in2,in3,in4,in5 = st.columns(5)
+                in1.metric("Total",      len(ind_nyse_df))
+                in2.metric("🟢 Premium", ind_n_p)
+                in3.metric("🟡 Early",   ind_n_e)
+                in4.metric("🔵 S2",      ind_n_s)
+
+                sig_filter_ind = in5.selectbox(
+                    "Show",
+                    ["All signals", "🟢 PREMIUM only", "🟡 EARLY only", "🟢+🟡 Best only", "🔵 Stage 2 only"],
+                    key="sig_filter_ind"
+                )
+                if sig_filter_ind == "🟢 PREMIUM only":
+                    ind_show = ind_nyse_df[ind_nyse_df["Signal"].str.contains("PREMIUM", na=False)]
+                elif sig_filter_ind == "🟡 EARLY only":
+                    ind_show = ind_nyse_df[ind_nyse_df["Signal"].str.contains("EARLY", na=False)]
+                elif sig_filter_ind == "🟢+🟡 Best only":
+                    ind_show = ind_nyse_df[ind_nyse_df["Signal"].str.contains("PREMIUM|EARLY", na=False)]
+                elif sig_filter_ind == "🔵 Stage 2 only":
+                    ind_show = ind_nyse_df[ind_nyse_df["Signal"].str.contains("S2", na=False)]
+                else:
+                    ind_show = ind_nyse_df
+
+                st.dataframe(ind_show, use_container_width=True, hide_index=True, height=600)
                 all_ind_nyse_tks = ind_nyse_df["Ticker"].tolist()
                 st.download_button("⬇️ Export all to TradingView (.txt)",
                                    export_tradingview_lines(all_ind_nyse_tks),
