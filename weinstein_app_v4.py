@@ -547,6 +547,68 @@ def fetch_weekly(ticker, years=YEARS_OF_DATA):
         df.columns = df.columns.get_level_values(0)
     return df.dropna()
 
+
+@st.cache_data(ttl=24*3600, show_spinner=False)
+def fetch_nyse_tickers():
+    """Fetch NYSE + NASDAQ ticker list from public GitHub source. Filtered: price > $2, US only."""
+    import urllib.request
+    urls = [
+        "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt",
+        "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt",
+    ]
+    tickers = []
+    for url in urls:
+        try:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                data = r.read().decode("utf-8")
+            tickers += [t.strip() for t in data.strip().splitlines() if t.strip() and "." not in t and len(t.strip()) <= 5]
+        except Exception:
+            pass
+    # Deduplicate and sort
+    return sorted(set(tickers))
+
+
+@st.cache_data(ttl=6*3600, show_spinner=False)
+def batch_evaluate(tickers_json, spx_close_json, years=YEARS_OF_DATA, batch_size=100):
+    """
+    Batch-download weekly data for many tickers at once (much faster than one-by-one).
+    Returns list of evaluated dicts.
+    """
+    tickers   = json.loads(tickers_json)
+    spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
+    end   = datetime.today()
+    start = end - timedelta(weeks=years * 52 + 10)
+    results = []
+
+    for i in range(0, len(tickers), batch_size):
+        batch = tickers[i:i + batch_size]
+        try:
+            raw = yf.download(
+                batch, start=start, end=end, interval="1wk",
+                auto_adjust=True, progress=False, group_by="ticker"
+            )
+        except Exception:
+            continue
+
+        for tk in batch:
+            try:
+                if len(batch) == 1:
+                    df = raw.copy()
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+                else:
+                    if tk not in raw.columns.get_level_values(0):
+                        continue
+                    df = raw[tk].dropna(how="all")
+                if df.empty or len(df) < SMA_WEEKS + 5:
+                    continue
+                ev = evaluate(df, spx_close)
+                ev["ticker"] = tk
+                results.append(ev)
+            except Exception:
+                continue
+    return results
+
 @st.cache_data(ttl=24*3600)
 def get_sector(ticker):
     MANUAL = {
@@ -762,6 +824,57 @@ def scan_sectors():
         rows.append(ev)
     sec_df = pd.DataFrame(rows).sort_values(["score","rs"], ascending=[False,False]).reset_index(drop=True)
     return spx_ev, sec_df, spx_close
+
+@st.cache_data(ttl=6*3600, show_spinner=False)
+def scan_full_universe_stage2(spx_close_json, min_score=4, min_price=2.0):
+    """
+    Batch-scan all NYSE+NASDAQ tickers for Stage 2 signals.
+    Uses batch downloading (200 at a time). Cached 6h.
+    Returns list of dicts sorted by premium > early > score > rs.
+    """
+    tickers   = fetch_nyse_tickers()
+    if not tickers:
+        return []
+    spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
+    end   = datetime.today()
+    start = end - timedelta(weeks=YEARS_OF_DATA * 52 + 10)
+    results   = []
+    batch_size = 200
+
+    for i in range(0, len(tickers), batch_size):
+        batch = tickers[i:i+batch_size]
+        try:
+            raw = yf.download(batch, start=start, end=end, interval="1wk",
+                              auto_adjust=True, progress=False, group_by="ticker")
+        except Exception:
+            continue
+        for tk in batch:
+            try:
+                if len(batch) == 1:
+                    df = raw.copy()
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+                else:
+                    if tk not in raw.columns.get_level_values(0): continue
+                    df = raw[tk].dropna(how="all")
+                if df.empty or len(df) < SMA_WEEKS + 5: continue
+                ev = evaluate(df, spx_close)
+                if (ev.get("price") or 0) < min_price:   continue
+                if ev.get("score", 0) < min_score:        continue
+                ev["ticker"]      = tk
+                ev["industry"]    = TICKER_TO_INDUSTRY.get(tk, "–")
+                results.append(ev)
+            except Exception:
+                continue
+
+    results.sort(key=lambda x: (
+        -int(x.get("premium", False)),
+        -int(x.get("early_sig", False)),
+        -x.get("score", 0),
+        -(x.get("rs") or -99)
+    ))
+    return results
+
 
 @st.cache_data(ttl=6*3600, show_spinner=False)
 def scan_sector_stocks(spx_close_json):
@@ -1008,18 +1121,115 @@ with tab_screener:
 
     # Master shortlist
     st.markdown("---")
-    st.markdown("### Master Shortlist — All Signals")
-    if not master_premium and not master_early:
-        st.info("No PREMIUM or EARLY signals today. Market is mid-trend. Re-run after next sector rotation or pullback.")
+    ms_hdr, ms_ctrl1, ms_ctrl2 = st.columns([3, 1, 1])
+    with ms_hdr:
+        st.markdown("### Master Shortlist — All Signals")
+    with ms_ctrl1:
+        ms_min_score = st.selectbox("Min score", [3, 4, 5], index=1, key="ms_min_score")
+    with ms_ctrl2:
+        ms_nyse = st.toggle("Full NYSE+NASDAQ", value=False, key="ms_nyse",
+                             help="Scans all ~6000 US stocks. Cached 6h after first run (~10-15 min).")
+
+    if ms_nyse:
+        st.info("📡 Scanning full NYSE + NASDAQ universe for Stage 2 signals. First run takes 10-15 min, then cached 6h.")
+        with st.spinner("Batch scanning full universe…"):
+            nyse_s2_results = scan_full_universe_stage2(spx_close_json, min_score=ms_min_score)
+
+        if not nyse_s2_results:
+            st.warning("Could not load NYSE data or no signals found.")
+        else:
+            # Build display table with sector context
+            nyse_rows = []
+            for r in nyse_s2_results:
+                tk  = r["ticker"]
+                ind = r.get("industry", "–")
+                # Map to broad sector
+                sec_name_m = "–"; sec_rs_m = None
+                for sec_tk, sec_name in SECTORS.items():
+                    if sec_name.lower() in ind.lower():
+                        sec_row = sec_df[sec_df["ticker"] == sec_tk]
+                        if not sec_row.empty:
+                            sec_rs_m   = sec_row.iloc[0]["rs"]
+                            sec_name_m = sec_name
+                            break
+                vol   = r["vol"]
+                cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
+                nyse_rows.append({
+                    "Signal":    sig_icon(r),
+                    "Ticker":    tk,
+                    "Industry":  ind,
+                    "Sector":    sec_name_m,
+                    "Sec RS":    fmt(sec_rs_m,"",1),
+                    "Sec Trend": rs_tag(sec_rs_m),
+                    "Stage":     r["stage"],
+                    "Score":     f"{r['score']}/5",
+                    "RS":        fmt(r["rs"],"",1),
+                    "RS Trend":  rs_tag(r["rs"]),
+                    "Price":     fmt(r["price"]),
+                    "%>SMA":     fmt(r["pct_above"],"%",1),
+                    "Vol":       fmt(vol,"x",1),
+                    "Base":      f"{r['base_w']}w",
+                    "Cross":     cross,
+                    "Stop":      fmt(r["stop"]),
+                    "Risk":      fmt(r["risk"],"%",1),
+                })
+
+            nyse_df = pd.DataFrame(nyse_rows)
+            n_p = len(nyse_df[nyse_df["Signal"].str.contains("PREMIUM", na=False)])
+            n_e = len(nyse_df[nyse_df["Signal"].str.contains("EARLY",   na=False)])
+            n_s = len(nyse_df[nyse_df["Signal"].str.contains("S2",      na=False)])
+
+            nm1,nm2,nm3,nm4 = st.columns(4)
+            nm1.metric("Total Stage 2+", len(nyse_df))
+            nm2.metric("🟢 Premium",     n_p)
+            nm3.metric("🟡 Early",       n_e)
+            nm4.metric("🔵 Stage 2",     n_s)
+
+            st.dataframe(nyse_df, use_container_width=True, hide_index=True, height=600)
+
+            # Export
+            st.markdown("---")
+            ex1, ex2, ex3 = st.columns(3)
+            with ex1:
+                all_nyse_tks = nyse_df["Ticker"].tolist()
+                st.caption("All Stage 2+ signals")
+                st.code(export_tradingview(all_nyse_tks[:50]), language=None)
+                st.download_button("⬇️ All signals (.txt)",
+                                   export_tradingview_lines(all_nyse_tks),
+                                   file_name="TV_NYSE_all_stage2.txt",
+                                   mime="text/plain", key="dl_nyse_all")
+            with ex2:
+                prem_tks = nyse_df[nyse_df["Signal"].str.contains("PREMIUM|EARLY", na=False)]["Ticker"].tolist()
+                st.caption("PREMIUM + EARLY only")
+                st.code(export_tradingview(prem_tks) if prem_tks else "–", language=None)
+                if prem_tks:
+                    st.download_button("⬇️ Best signals (.txt)",
+                                       export_tradingview_lines(prem_tks),
+                                       file_name="TV_NYSE_premium_early.txt",
+                                       mime="text/plain", key="dl_nyse_prem")
+            with ex3:
+                bull_sec_tks = nyse_df[nyse_df["Sec RS"].apply(
+                    lambda x: float(x) > 0 if x not in ("–","n/a") else False
+                )]["Ticker"].tolist()
+                st.caption("Bullish sector only")
+                st.code(export_tradingview(bull_sec_tks[:50]) if bull_sec_tks else "–", language=None)
+                if bull_sec_tks:
+                    st.download_button("⬇️ Bullish sector (.txt)",
+                                       export_tradingview_lines(bull_sec_tks),
+                                       file_name="TV_NYSE_bullish_sector.txt",
+                                       mime="text/plain", key="dl_nyse_bull")
     else:
-        if master_premium:
-            st.markdown("#### 🟢 Premium Signals")
-            for r, sname in master_premium:
-                st.markdown(signal_card(r, sname), unsafe_allow_html=True)
-        if master_early:
-            st.markdown("#### 🟡 Early Signals")
-            for r, sname in master_early:
-                st.markdown(signal_card(r, sname), unsafe_allow_html=True)
+        if not master_premium and not master_early:
+            st.info("No PREMIUM or EARLY signals in the sector universe today. Enable 'Full NYSE+NASDAQ' for a broader scan.")
+        else:
+            if master_premium:
+                st.markdown("#### 🟢 Premium Signals")
+                for r, sname in master_premium:
+                    st.markdown(signal_card(r, sname), unsafe_allow_html=True)
+            if master_early:
+                st.markdown("#### 🟡 Early Signals")
+                for r, sname in master_early:
+                    st.markdown(signal_card(r, sname), unsafe_allow_html=True)
 
     # Legend
     with st.expander("📖 Legend"):
@@ -1051,8 +1261,8 @@ with tab_screener:
     Lower tightness % = flatter, cleaner base.</span>""", unsafe_allow_html=True)
 
     @st.cache_data(ttl=6*3600, show_spinner=False)
-    def scan_stage1_watchlist(spx_close_json):
-        """Scan all sector stocks for Stage 1 bases 40+ weeks, sorted by tightness."""
+    def scan_stage1_sector_stocks(spx_close_json):
+        """Scan sector universe for Stage 1 bases 40+ weeks."""
         spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
         all_results = []
         for sec_tk, stocks in SECTOR_STOCKS.items():
@@ -1060,16 +1270,84 @@ with tab_screener:
                 df = fetch_weekly(tk)
                 if df.empty: continue
                 ev = evaluate(df, spx_close)
-                if "Stage 1" not in ev.get("stage",""):      continue
-                if ev.get("base_w", 0) < 40:                 continue
+                if "Stage 1" not in ev.get("stage",""): continue
+                if ev.get("base_w", 0) < 40:            continue
                 ev["ticker"]   = tk
                 ev["sec_tk"]   = sec_tk
                 ev["sec_name"] = SECTORS.get(sec_tk, sec_tk)
                 all_results.append(ev)
-        return pd.DataFrame(all_results) if all_results else pd.DataFrame()
+        return all_results
 
-    with st.spinner("Scanning for Stage 1 bases…"):
-        s1_df_raw = scan_stage1_watchlist(spx_close_json)
+    # ── NYSE toggle ──
+    s1_top_row = st.columns([3, 1, 1])
+    with s1_top_row[2]:
+        include_nyse = st.toggle("Include NYSE + NASDAQ", value=False, key="s1_nyse",
+                                  help="Scans all ~3000 US-listed stocks. Takes 5-15 min on first run, cached 6h after.")
+
+    if include_nyse:
+        st.info("📡 Fetching full NYSE + NASDAQ universe… This runs once and is cached for 6 hours.")
+        with st.spinner("Loading ticker list…"):
+            nyse_tks = fetch_nyse_tickers()
+
+        if not nyse_tks:
+            st.error("Could not load ticker list. Check internet connection.")
+            all_s1_results = scan_stage1_sector_stocks(spx_close_json)
+        else:
+            st.caption(f"{len(nyse_tks)} tickers loaded. Batch-scanning for Stage 1 bases (40+ weeks)…")
+            progress_bar = st.progress(0, text="Starting batch scan…")
+
+            @st.cache_data(ttl=6*3600, show_spinner=False)
+            def scan_nyse_stage1(tickers_json, spx_close_json):
+                tickers   = json.loads(tickers_json)
+                spx_close = pd.read_json(StringIO(spx_close_json), typ="series")
+                end   = datetime.today()
+                start = end - timedelta(weeks=YEARS_OF_DATA * 52 + 10)
+                results = []
+                batch_size = 200
+                total = len(tickers)
+                for i in range(0, total, batch_size):
+                    batch = tickers[i:i+batch_size]
+                    try:
+                        raw = yf.download(batch, start=start, end=end, interval="1wk",
+                                          auto_adjust=True, progress=False, group_by="ticker")
+                    except Exception:
+                        continue
+                    for tk in batch:
+                        try:
+                            if len(batch) == 1:
+                                df = raw.copy()
+                                if isinstance(df.columns, pd.MultiIndex):
+                                    df.columns = df.columns.get_level_values(0)
+                            else:
+                                if tk not in raw.columns.get_level_values(0): continue
+                                df = raw[tk].dropna(how="all")
+                                if isinstance(df.columns, pd.MultiIndex):
+                                    df.columns = df.columns.get_level_values(0)
+                            if df.empty or len(df) < SMA_WEEKS + 5: continue
+                            ev = evaluate(df, spx_close)
+                            if "Stage 1" not in ev.get("stage",""): continue
+                            if ev.get("base_w", 0) < 40:            continue
+                            # Skip penny stocks and very low liquidity
+                            if (ev.get("price") or 0) < 2:          continue
+                            ev["ticker"]   = tk
+                            ev["sec_tk"]   = TICKER_TO_INDUSTRY.get(tk, "")
+                            ev["sec_name"] = TICKER_TO_INDUSTRY.get(tk, "–")
+                            results.append(ev)
+                        except Exception:
+                            continue
+                return results
+
+            with st.spinner(f"Batch scanning {len(nyse_tks)} tickers (cached after first run)…"):
+                nyse_results = scan_nyse_stage1(json.dumps(nyse_tks), spx_close_json)
+                progress_bar.progress(1.0, text=f"Done — {len(nyse_results)} Stage 1 bases found")
+
+            sector_results = scan_stage1_sector_stocks(spx_close_json)
+            all_s1_results = sector_results + nyse_results
+    else:
+        with st.spinner("Scanning sector universe for Stage 1 bases…"):
+            all_s1_results = scan_stage1_sector_stocks(spx_close_json)
+
+    s1_df_raw = pd.DataFrame(all_s1_results) if all_s1_results else pd.DataFrame()
 
     if s1_df_raw.empty:
         st.info("No Stage 1 bases of 40+ weeks found in the current universe.")
@@ -1568,21 +1846,78 @@ with tab_industries:
     with ind_tab2:
         st.markdown("---")
         st.markdown("### 🚨 All Industry Signals")
-        st.markdown(f"<span class='subtext'>Select industries to scan. Shows all PREMIUM, EARLY and Stage 2 stocks with sector context.</span>", unsafe_allow_html=True)
+        st.markdown(f"<span class='subtext'>Select industries to scan, or enable Full NYSE+NASDAQ for a complete market scan.</span>", unsafe_allow_html=True)
 
-        sig_col1, sig_col2 = st.columns([3,1])
-        with sig_col1:
+        sig_row1, sig_row2, sig_row3, sig_row4 = st.columns([3, 1, 1, 1])
+        with sig_row1:
             sig_industries = st.multiselect(
                 "Select industries to scan",
                 list(FINVIZ_INDUSTRIES.keys()),
                 default=list(FINVIZ_INDUSTRIES.keys())[:12],
                 label_visibility="collapsed"
             )
-        with sig_col2:
+        with sig_row2:
             min_sig_score = st.selectbox("Min score", [3,4,5], index=0, key="sig_min_score")
-            run_sig_scan  = st.button("🔍 Scan selected", use_container_width=True)
+        with sig_row3:
+            run_sig_scan  = st.button("🔍 Scan industries", use_container_width=True)
+        with sig_row4:
+            ind_nyse = st.toggle("Full NYSE+NASDAQ", value=False, key="ind_nyse",
+                                  help="Ignores industry selection — scans all ~6000 US stocks.")
 
-        if run_sig_scan and sig_industries:
+        if ind_nyse:
+            st.info("📡 Full NYSE + NASDAQ scan for Stage 2 signals. Cached 6h after first run.")
+            with st.spinner("Batch scanning full universe…"):
+                nyse_ind_results = scan_full_universe_stage2(spx_close_json, min_score=min_sig_score)
+            if nyse_ind_results:
+                ind_nyse_rows = []
+                for r in nyse_ind_results:
+                    tk  = r["ticker"]
+                    ind = r.get("industry","–")
+                    sec_name_i = "–"; sec_rs_i = None
+                    for sec_tk, sec_name in SECTORS.items():
+                        if sec_name.lower() in ind.lower():
+                            sec_row = sec_df[sec_df["ticker"] == sec_tk]
+                            if not sec_row.empty:
+                                sec_rs_i   = sec_row.iloc[0]["rs"]
+                                sec_name_i = sec_name
+                                break
+                    vol   = r["vol"]
+                    cross = f"{int(r['cross'])}w" if r.get("cross",-1) >= 0 else "–"
+                    ind_nyse_rows.append({
+                        "Signal":    sig_icon(r),
+                        "Ticker":    tk,
+                        "Industry":  ind,
+                        "Sector":    sec_name_i,
+                        "Sec RS":    fmt(sec_rs_i,"",1),
+                        "Sec Trend": rs_tag(sec_rs_i),
+                        "Stage":     r["stage"],
+                        "Score":     f"{r['score']}/5",
+                        "RS":        fmt(r["rs"],"",1),
+                        "RS Trend":  rs_tag(r["rs"]),
+                        "Price":     fmt(r["price"]),
+                        "%>SMA":     fmt(r["pct_above"],"%",1),
+                        "Vol":       fmt(vol,"x",1),
+                        "Base":      f"{r['base_w']}w",
+                        "Cross":     cross,
+                        "Stop":      fmt(r["stop"]),
+                        "Risk":      fmt(r["risk"],"%",1),
+                    })
+                ind_nyse_df = pd.DataFrame(ind_nyse_rows)
+                in1,in2,in3,in4 = st.columns(4)
+                in1.metric("Total", len(ind_nyse_df))
+                in2.metric("🟢 Premium", len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("PREMIUM",na=False)]))
+                in3.metric("🟡 Early",   len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("EARLY",  na=False)]))
+                in4.metric("🔵 S2",      len(ind_nyse_df[ind_nyse_df["Signal"].str.contains("S2",     na=False)]))
+                st.dataframe(ind_nyse_df, use_container_width=True, hide_index=True, height=600)
+                all_ind_nyse_tks = ind_nyse_df["Ticker"].tolist()
+                st.download_button("⬇️ Export all to TradingView (.txt)",
+                                   export_tradingview_lines(all_ind_nyse_tks),
+                                   file_name="TV_full_universe_stage2.txt",
+                                   mime="text/plain", key="dl_ind_nyse")
+            else:
+                st.warning("No signals found or data unavailable.")
+
+        elif run_sig_scan and sig_industries:
             all_signal_rows = []
             progress = st.progress(0, text="Scanning industries…")
             for idx, ind_name in enumerate(sig_industries):
