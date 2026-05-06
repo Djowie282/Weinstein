@@ -541,7 +541,7 @@ def fetch_weekly(ticker, years=YEARS_OF_DATA):
     end   = datetime.today()
     start = end - timedelta(weeks=years * 52 + 10)
     df = yf.download(ticker, start=start, end=end, interval="1wk",
-                     auto_adjust=True, progress=False)
+                     auto_adjust=True, progress=False, threads=False)
     if df.empty: return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
@@ -585,7 +585,7 @@ def batch_evaluate(tickers_json, spx_close_json, years=YEARS_OF_DATA, batch_size
         try:
             raw = yf.download(
                 batch, start=start, end=end, interval="1wk",
-                auto_adjust=True, progress=False, group_by="ticker"
+                auto_adjust=True, progress=False, group_by="ticker", threads=False
             )
         except Exception:
             continue
@@ -845,7 +845,7 @@ def scan_full_universe_stage2(spx_close_json, min_score=4, min_price=2.0):
         batch = tickers[i:i+batch_size]
         try:
             raw = yf.download(batch, start=start, end=end, interval="1wk",
-                              auto_adjust=True, progress=False, group_by="ticker")
+                              auto_adjust=True, progress=False, group_by="ticker", threads=False)
         except Exception:
             continue
         for tk in batch:
@@ -1337,7 +1337,7 @@ with tab_screener:
                     batch = tickers[i:i+batch_size]
                     try:
                         raw = yf.download(batch, start=start, end=end, interval="1wk",
-                                          auto_adjust=True, progress=False, group_by="ticker")
+                                          auto_adjust=True, progress=False, group_by="ticker", threads=False)
                     except Exception:
                         continue
                     for tk in batch:
@@ -1736,7 +1736,7 @@ with tab_industries:
         try:
             all_tks = list(set(tks + ["SPY"]))
             raw = yf.download(all_tks, start=start, end=end,
-                              auto_adjust=False, progress=False)["Close"]
+                              auto_adjust=False, progress=False, threads=False)["Close"]
             if isinstance(raw, pd.Series): raw = raw.to_frame(all_tks[0])
             raw = raw.ffill().dropna(how="all")
             if len(raw) < 2: return None
@@ -2112,7 +2112,7 @@ def get_portfolio_history(tickers_json, period="1y"):
     start = end - timedelta(days=365)
     try:
         raw = yf.download(tickers, start=start, end=end,
-                          auto_adjust=False, progress=False)["Close"]
+                          auto_adjust=False, progress=False, threads=False)["Close"]
         if isinstance(raw, pd.Series):
             raw = raw.to_frame(tickers[0])
         # Drop incomplete today bar (market still open)
@@ -2373,7 +2373,7 @@ with tab_dashboard:
                     start = end - timedelta(days=int(years * 365))
                     try:
                         raw = yf.download(all_tks, start=start, end=end,
-                                          auto_adjust=False, progress=False)["Close"]
+                                          auto_adjust=False, progress=False, threads=False)["Close"]
                         if isinstance(raw, pd.Series):
                             raw = raw.to_frame(all_tks[0])
                         # Drop today if market still open
