@@ -911,6 +911,14 @@ def scan_tickers(tickers_json, spx_close_json):
 
 # ─────────────────────────────────────────────
 # DISPLAY HELPERS
+
+def export_tradingview(tickers):
+    """Generate TradingView-compatible comma-separated watchlist string."""
+    return ",".join(tickers)
+
+def export_tradingview_lines(tickers):
+    """One ticker per line for TradingView import file."""
+    return "\n".join(tickers)
 # ─────────────────────────────────────────────
 
 def rs_tag(score):
@@ -1494,14 +1502,6 @@ def scan_industry(industry_name, tickers_json, spx_close_json):
     return pd.DataFrame(rows).sort_values(
         ["premium","early_sig","score","rs"], ascending=[False,False,False,False]
     ).reset_index(drop=True)
-
-def export_tradingview(tickers):
-    """Generate TradingView-compatible watchlist string."""
-    return ",".join(tickers)
-
-def export_tradingview_lines(tickers):
-    """One ticker per line for TradingView import."""
-    return "\n".join(tickers)
 
 with tab_industries:
     st.markdown("### 🔍 Industry Screener")
